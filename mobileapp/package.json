@@ -1,0 +1,59 @@
+{
+  "name": "lemua",
+  "version": "1.0.0",
+  "main": "index.ts",
+  "onnxruntimeExtensionsEnabled": "true",
+  "dependencies": {
+    "expo": "~57.0.31",
+    "expo-asset": "~57.0.20",
+    "expo-audio": "~57.0.5",
+    "expo-blur": "~57.0.3",
+    "expo-dev-client": "~57.0.20",
+    "expo-document-picker": "~57.0.3",
+    "expo-file-system": "~57.0.7",
+    "expo-open-phonemizer": "^1.0.1",
+    "expo-speech": "~57.0.3",
+    "expo-status-bar": "~57.0.1",
+    "fflate": "^0.8.3",
+    "onnxruntime-react-native": "^1.24.3",
+    "react": "19.2.3",
+    "react-dom": "19.2.3",
+    "react-native": "0.86.3",
+    "react-native-web": "^0.21.2"
+  },
+  "devDependencies": {
+    "@react-native-community/cli": "20.2.0",
+    "@react-native-community/cli-platform-android": "20.2.0",
+    "@react-native-community/cli-platform-ios": "20.2.0",
+    "@types/react": "~19.2.4",
+    "eslint": "^9.0.0",
+    "eslint-config-expo": "~57.0.2",
+    "typescript": "~6.0.3"
+  },
+  "scripts": {
+    "start": "expo start",
+    "android": "expo run:android",
+    "ios": "expo run:ios",
+    "web": "expo start --web",
+    "lint": "expo lint"
+  },
+  "overrides": {
+    "expo-open-phonemizer": {
+      "expo": "$expo",
+      "expo-file-system": "$expo-file-system",
+      "react": "$react",
+      "react-native": "$react-native"
+    }
+  },
+  "private": true,
+  "expo": {
+    "doctor": {
+      "reactNativeDirectoryCheck": {
+        "exclude": [
+          "onnxruntime-react-native",
+          "react-native-edge-to-edge"
+        ]
+      }
+    }
+  }
+}

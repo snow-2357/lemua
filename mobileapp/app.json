@@ -1,0 +1,41 @@
+{
+  "expo": {
+    "name": "Lemua",
+    "slug": "lemua",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "icon": "./assets/icon.png",
+    "userInterfaceStyle": "light",
+    "ios": {
+      "supportsTablet": true,
+      "bundleIdentifier": "com.snowhit13.lemua",
+      "infoPlist": {
+        "ITSAppUsesNonExemptEncryption": false
+      }
+    },
+    "android": {
+      "adaptiveIcon": {
+        "backgroundColor": "#E6F4FE",
+        "foregroundImage": "./assets/android-icon-foreground.png",
+        "backgroundImage": "./assets/android-icon-background.png",
+        "monochromeImage": "./assets/android-icon-monochrome.png"
+      },
+      "predictiveBackGestureEnabled": false,
+      "package": "com.snowhit13.lemua"
+    },
+    "web": {
+      "favicon": "./assets/favicon.png"
+    },
+    "plugins": [
+      "expo-status-bar",
+      "onnxruntime-react-native",
+      "./plugins/withAndroidGradleVersion"
+    ],
+    "extra": {
+      "eas": {
+        "projectId": "b9e7cc63-77ef-47ca-bac3-ba71c8c41d5f"
+      }
+    },
+    "owner": "snowhit13"
+  }
+}

@@ -18,7 +18,6 @@ export default function BookCover({
       <div className="cover-spine" />
       <div className="cover-ornament">{book.mark}</div>
       <div className="cover-wordmark">
-        <span className="cover-kicker">A LEMUA EDITION</span>
         <span className="cover-title" title={book.title}>
           {truncateText(book.title, featured ? 24 : 20)}
         </span>

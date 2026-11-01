@@ -247,10 +247,8 @@
   box-shadow: 0 8px 20px rgba(54, 46, 31, 0.035);
   display: flex;
   gap: 28px;
-  margin-bottom: 38px;
-  min-height: 236px;
+  margin-bottom: 18px;
   overflow: hidden;
-  padding: 22px 27px;
   position: relative;
 }
 
@@ -312,7 +310,7 @@
 .cover-ornament {
   color: rgba(255, 245, 220, 0.68);
   font-family: Georgia, 'Times New Roman', serif;
-  font-size: 48px;
+  font-size: 24px;
   left: 22px;
   line-height: 1;
   position: absolute;
@@ -322,8 +320,8 @@
 .cover-wordmark {
   display: flex;
   flex-direction: column;
-  gap: 6px;
-  padding: 0 15px 20px 21px;
+  gap: 4px;
+  padding: 4px 0 12px 16px;
   position: relative;
   z-index: 1;
 }
@@ -514,11 +512,11 @@
   border: 0;
   border-radius: 50%;
   color: #39352e;
-  height: 29px;
   position: absolute;
-  right: 8px;
-  top: 8px;
-  width: 29px;
+  height: 18px;
+  right: 12px;
+  top: 12px;
+  width: 18px;
   z-index: 2;
 }
 

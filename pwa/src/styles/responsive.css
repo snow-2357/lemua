@@ -43,14 +43,14 @@
   }
 
   .search-field {
-    margin: 25px 0 34px;
+    margin: 18px 0 14px;
     max-width: none;
   }
 
   .current-card {
     align-items: flex-start;
     gap: 15px;
-    margin-bottom: 32px;
+    margin-bottom: 18px;
     min-height: 202px;
     padding: 16px;
   }
@@ -61,7 +61,7 @@
 
   .cover-wordmark {
     gap: 4px;
-    padding: 0 10px 14px 16px;
+    margin-left: 4px;
   }
 
   .cover-title {
@@ -73,7 +73,8 @@
   }
 
   .cover-ornament {
-    font-size: 37px;
+    font-size: 32px;
+    padding-left: 4px;
     left: 18px;
     top: 16px;
   }
@@ -114,7 +115,7 @@
   .book-shelf {
     gap: 14px;
     grid-auto-columns: minmax(105px, 30%);
-    margin: 16px 0 31px;
+    margin: 16px 0 18px;
   }
 
   .shelf-item .book-cover {

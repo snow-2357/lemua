@@ -14,6 +14,7 @@ type Props = {
   isImporting: boolean
   onSearchChange: (search: string) => void
   onOpenBook: (book: ImportedBook) => void
+  onDeleteBook: (book: ImportedBook) => void
   onOpenProfile: () => void
   onImportFile: (file: File) => void
 }
@@ -26,6 +27,7 @@ export default function LibraryScreen({
   isImporting,
   onSearchChange,
   onOpenBook,
+  onDeleteBook,
   onOpenProfile,
   onImportFile,
 }: Props) {
@@ -152,9 +154,16 @@ export default function LibraryScreen({
                   </button>
                   {showBookMenu === book.id && (
                     <div className="book-menu">
-                      <span title={book.title}>{truncateText(book.title, 28)}</span>
-                      <small>{book.author}</small>
                       <button onClick={() => onOpenBook(book)}>Open book</button>
+                      <button
+                        className="delete-book-action"
+                        onClick={() => {
+                          setShowBookMenu(null)
+                          onDeleteBook(book)
+                        }}
+                      >
+                        Delete book
+                      </button>
                     </div>
                   )}
                 </div>

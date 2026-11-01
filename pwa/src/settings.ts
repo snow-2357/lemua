@@ -17,7 +17,7 @@ function openDatabase(): Promise<IDBDatabase> {
   if (databasePromise) return databasePromise
 
   const pending = new Promise<IDBDatabase>((resolve, reject) => {
-    const request = indexedDB.open(databaseName, 2)
+    const request = indexedDB.open(databaseName, 3)
 
     request.onupgradeneeded = () => {
       const database = request.result
@@ -26,6 +26,10 @@ function openDatabase(): Promise<IDBDatabase> {
       }
       if (!database.objectStoreNames.contains(booksStoreName)) {
         database.createObjectStore(booksStoreName, { keyPath: 'id' })
+      }
+      const booksStore = request.transaction?.objectStore(booksStoreName)
+      if (booksStore && !booksStore.indexNames.contains('fileFingerprint')) {
+        booksStore.createIndex('fileFingerprint', 'fileFingerprint', { unique: true })
       }
     }
     request.onsuccess = () => {
@@ -151,13 +155,29 @@ export async function persistImportedBook(book: ImportedBook): Promise<void> {
 
   await new Promise<void>((resolve, reject) => {
     const transaction = database.transaction(booksStoreName, 'readwrite')
-    transaction.objectStore(booksStoreName).put(book)
+    transaction.objectStore(booksStoreName).add(book)
     transaction.oncomplete = () => resolve()
     transaction.onerror = () => {
       reject(transaction.error ?? new Error('Could not save this EPUB.'))
     }
     transaction.onabort = () => {
       reject(transaction.error ?? new Error('Saving this EPUB was aborted.'))
+    }
+  })
+}
+
+export async function deleteImportedBook(bookId: string): Promise<void> {
+  const database = await openDatabase()
+
+  await new Promise<void>((resolve, reject) => {
+    const transaction = database.transaction(booksStoreName, 'readwrite')
+    transaction.objectStore(booksStoreName).delete(bookId)
+    transaction.oncomplete = () => resolve()
+    transaction.onerror = () => {
+      reject(transaction.error ?? new Error('Could not delete this book.'))
+    }
+    transaction.onabort = () => {
+      reject(transaction.error ?? new Error('Deleting this book was aborted.'))
     }
   })
 }

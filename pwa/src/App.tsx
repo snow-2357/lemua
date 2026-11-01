@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import './App.css'
 import AudioPreviewScreen from './screens/AudioPreviewScreen'
 import LibraryScreen from './screens/LibraryScreen'
@@ -8,12 +8,14 @@ import { isContentsChapterTitle, parseEpub } from './epub'
 import {
   loadImportedBooks,
   loadSettings,
+  deleteImportedBook,
   persistImportedBook,
   persistLastRead,
   persistReadingPosition,
   persistSettings,
 } from './settings'
 import type { EpubChapter, ImportedBook } from './types'
+import { getFileFingerprint } from './utils/fileFingerprint'
 
 type Page = 'library' | 'profile' | 'reader' | 'audio'
 
@@ -21,6 +23,17 @@ function readableChapters(book: ImportedBook): EpubChapter[] {
   return book.chapters.filter(
     (chapter, index) => index !== 0 || !isContentsChapterTitle(chapter.title),
   )
+}
+
+async function findLegacyDuplicate(
+  books: ImportedBook[],
+  file: File,
+  fileFingerprint: string,
+): Promise<ImportedBook | undefined> {
+  for (const book of books) {
+    if (book.file.size !== file.size || book.fileFingerprint) continue
+    if ((await getFileFingerprint(book.file)) === fileFingerprint) return book
+  }
 }
 
 function getReadingProgress(
@@ -56,6 +69,7 @@ function App() {
   const [speed, setSpeed] = useState(1)
   const [notice, setNotice] = useState('')
   const [settingsLoaded, setSettingsLoaded] = useState(false)
+  const importInProgress = useRef(false)
 
   const activeBook = importedBooks.find((book) => book.id === activeBookId)
   const chapters = activeBook ? readableChapters(activeBook) : []
@@ -177,21 +191,62 @@ function App() {
   }
 
   const importBook = async (file: File) => {
+    if (importInProgress.current) return
+    importInProgress.current = true
     setIsImporting(true)
     try {
       const importedBook = await parseEpub(file)
-      await persistImportedBook(importedBook)
-      setImportedBooks((currentBooks) => [importedBook, ...currentBooks])
+      const fileFingerprint = await getFileFingerprint(file)
+      const duplicate = importedBooks.find(
+        (book) =>
+          book.file.size === file.size &&
+          book.fileFingerprint === fileFingerprint,
+      ) ?? await findLegacyDuplicate(importedBooks, file, fileFingerprint)
+      if (duplicate) {
+        notify(`“${duplicate.title}” is already in your bookshelf.`)
+        return
+      }
+
+      const bookToSave = { ...importedBook, fileFingerprint }
+      await persistImportedBook(bookToSave)
+      setImportedBooks((currentBooks) => [bookToSave, ...currentBooks])
       notify(`“${importedBook.title}” was added to your bookshelf.`)
     } catch (error) {
       console.error('Could not import EPUB.', error)
-      notify(
-        error instanceof Error
-          ? error.message
-          : 'Could not import this EPUB. Please try another file.',
-      )
+      if (error instanceof DOMException && error.name === 'ConstraintError') {
+        notify('This EPUB is already in your bookshelf.')
+      } else {
+        notify(
+          error instanceof Error
+            ? error.message
+            : 'Could not import this EPUB. Please try another file.',
+        )
+      }
     } finally {
+      importInProgress.current = false
       setIsImporting(false)
+    }
+  }
+
+  const removeBook = async (book: ImportedBook) => {
+    const confirmed = window.confirm(
+      `Delete “${book.title}” from your bookshelf? This cannot be undone.`,
+    )
+    if (!confirmed) return
+
+    try {
+      await deleteImportedBook(book.id)
+      const remainingBooks = importedBooks.filter(
+        (currentBook) => currentBook.id !== book.id,
+      )
+      setImportedBooks(remainingBooks)
+      if (activeBookId === book.id) {
+        setActiveBookId(remainingBooks[0]?.id ?? null)
+      }
+      notify(`“${book.title}” was deleted.`)
+    } catch (error) {
+      console.error('Could not delete imported book.', error)
+      notify('Could not delete this book. Please try again.')
     }
   }
 
@@ -238,6 +293,7 @@ function App() {
           isImporting={isImporting}
           onSearchChange={setSearch}
           onOpenBook={openBook}
+          onDeleteBook={(book) => void removeBook(book)}
           onOpenProfile={() => setPage('profile')}
           onImportFile={importBook}
         />

@@ -18,6 +18,7 @@ export type ImportedBook = Book & {
   isEpub: true
   file: Blob
   chapters: EpubChapter[]
+  fileFingerprint?: string
   lastReadAt?: number
   lastChapterIndex?: number
   lastReaderPage?: number

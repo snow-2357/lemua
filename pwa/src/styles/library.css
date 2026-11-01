@@ -534,10 +534,9 @@
   display: flex;
   flex-direction: column;
   gap: 5px;
-  min-width: 168px;
   padding: 13px;
   position: absolute;
-  right: 0;
+  left: 0;
   top: 44px;
   z-index: 3;
 }
@@ -564,6 +563,14 @@
   margin-top: 7px;
   padding: 0;
   text-align: left;
+}
+
+.book-menu .delete-book-action {
+  color: #b14c45;
+}
+
+.theme-dark .book-menu .delete-book-action {
+  color: #f08e83;
 }
 
 .shelf-title {

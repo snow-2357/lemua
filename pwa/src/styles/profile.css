@@ -1,0 +1,158 @@
+.subpage {
+  margin: 0 auto;
+  max-width: 760px;
+  min-height: 100svh;
+  padding: 0 28px 42px;
+}
+
+.subpage-header,
+.reader-header {
+  align-items: center;
+  display: flex;
+  justify-content: space-between;
+  min-height: 76px;
+}
+
+.subpage-header {
+  border-bottom: 1px solid var(--line);
+  color: var(--ink);
+  font-size: 14px;
+  font-weight: 600;
+}
+
+.header-balance {
+  width: 38px;
+}
+
+.icon-button {
+  background: var(--surface);
+  border: 0;
+  border-radius: 50%;
+  color: var(--accent);
+  height: 38px;
+  width: 38px;
+}
+
+.profile-content {
+  margin: 0 auto;
+  max-width: 460px;
+  padding-top: 49px;
+}
+
+.profile-intro {
+  align-items: center;
+  display: flex;
+  flex-direction: column;
+  text-align: center;
+}
+
+.profile-avatar {
+  align-items: center;
+  background: rgba(132, 152, 135, 0.2);
+  border: 1px solid rgba(132, 152, 135, 0.42);
+  border-radius: 50%;
+  color: #718b76;
+  display: flex;
+  font-family: Georgia, 'Times New Roman', serif;
+  font-size: 32px;
+  height: 84px;
+  justify-content: center;
+  margin-bottom: 17px;
+  width: 84px;
+}
+
+.theme-dark .profile-avatar {
+  background: #343b43;
+  border-color: #59604f;
+  color: #c5ad83;
+}
+
+.profile-intro h1 {
+  font-size: 29px;
+  letter-spacing: -0.6px;
+  margin: 9px 0 6px;
+}
+
+.profile-intro > p:last-child {
+  color: var(--ink-soft);
+  font-size: 12px;
+  margin: 0;
+}
+
+.settings-card {
+  background: var(--surface-raised);
+  border-radius: 15px;
+  margin-top: 28px;
+  padding: 16px;
+}
+
+.name-card input {
+  border-bottom: 1px solid var(--line);
+  font-size: 15px;
+  height: 45px;
+  margin-top: 3px;
+}
+
+.appearance-card {
+  align-items: center;
+  display: flex;
+  gap: 13px;
+  margin-top: 13px;
+  min-height: 70px;
+}
+
+.setting-icon {
+  height: 38px;
+  width: 38px;
+}
+
+.setting-copy {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  gap: 5px;
+}
+
+.theme-switch {
+  background: #d7d2c8;
+  border: 0;
+  border-radius: 22px;
+  cursor: pointer;
+  height: 25px;
+  padding: 3px;
+  transition: background-color 150ms ease;
+  width: 44px;
+}
+
+.theme-switch span {
+  background: #fffefa;
+  border-radius: 50%;
+  display: block;
+  height: 19px;
+  transition: transform 150ms ease;
+  width: 19px;
+}
+
+.theme-switch.is-on {
+  background: var(--accent);
+}
+
+.theme-switch.is-on span {
+  transform: translateX(19px);
+}
+
+.save-button {
+  border-radius: 12px;
+  font-size: 13px;
+  height: 49px;
+  margin-top: 18px;
+  width: 100%;
+}
+
+.profile-footnote {
+  color: var(--ink-muted);
+  font-size: 10px;
+  margin-top: 16px;
+  text-align: center;
+}
+

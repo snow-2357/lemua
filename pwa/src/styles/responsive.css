@@ -1,0 +1,239 @@
+@media (min-width: 1100px) {
+  .library-content {
+    padding-top: 62px;
+  }
+}
+
+@media (max-width: 720px) {
+  .library-page {
+    padding: 0 22px;
+  }
+
+  .topbar {
+    height: 70px;
+  }
+
+  .topbar-caption,
+  .welcome-art,
+  .card-sparkle {
+    display: none;
+  }
+
+  .library-content {
+    padding-top: 36px;
+  }
+
+  .welcome-row {
+    min-height: unset;
+  }
+
+  .welcome-row h1 {
+    font-size: 39px;
+    margin: 13px 0 9px;
+  }
+
+  .mobile-break {
+    display: initial;
+  }
+
+  .welcome-copy {
+    font-size: 12px;
+    line-height: 1.55;
+    max-width: 330px;
+  }
+
+  .search-field {
+    margin: 25px 0 34px;
+    max-width: none;
+  }
+
+  .current-card {
+    align-items: flex-start;
+    gap: 15px;
+    margin-bottom: 32px;
+    min-height: 202px;
+    padding: 16px;
+  }
+
+  .book-cover-featured {
+    width: 116px;
+  }
+
+  .cover-wordmark {
+    gap: 4px;
+    padding: 0 10px 14px 16px;
+  }
+
+  .cover-title {
+    font-size: 12px;
+  }
+
+  .cover-author {
+    font-size: 7px;
+  }
+
+  .cover-ornament {
+    font-size: 37px;
+    left: 18px;
+    top: 16px;
+  }
+
+  .current-details {
+    padding: 2px 0;
+  }
+
+  .current-details h3 {
+    font-size: 19px;
+    line-height: 1.14;
+    margin-top: 7px;
+  }
+
+  .book-byline {
+    font-size: 10px;
+  }
+
+  .current-note {
+    display: none;
+  }
+
+  .progress-wrap {
+    margin-top: 16px;
+  }
+
+  .primary-button {
+    font-size: 10px;
+    margin-top: 13px;
+    min-height: 35px;
+    padding: 0 12px;
+  }
+
+  .section-heading h2 {
+    font-size: 19px;
+  }
+
+  .book-shelf {
+    gap: 14px;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    margin: 16px 0 31px;
+    row-gap: 22px;
+  }
+
+  .shelf-item .book-cover {
+    width: 100%;
+  }
+
+  .book-cover:not(.book-cover-featured) .cover-title {
+    font-size: 12px;
+  }
+
+  .book-cover:not(.book-cover-featured) .cover-wordmark {
+    padding-left: 17px;
+    padding-right: 9px;
+  }
+
+  .book-cover:not(.book-cover-featured) .cover-ornament {
+    font-size: 38px;
+  }
+
+  .shelf-title {
+    font-size: 12px;
+  }
+
+  .shelf-author {
+    font-size: 9px;
+  }
+
+  .library-bottom-grid {
+    grid-template-columns: 1fr;
+    gap: 10px;
+  }
+
+  .milestone-count {
+    margin-left: auto;
+  }
+
+  .page-footer {
+    gap: 12px;
+    font-size: 7px;
+    letter-spacing: 0.3px;
+  }
+
+  .subpage {
+    padding: 0 22px 35px;
+  }
+
+  .profile-content {
+    padding-top: 40px;
+  }
+
+  .reader-page {
+    min-height: 560px;
+    padding-left: 17px;
+    padding-right: 17px;
+  }
+
+  .reading-page {
+    padding: 12px 9px 26px;
+  }
+
+  .reading-page h1 {
+    margin-bottom: 15px;
+  }
+
+  .chapter-rule {
+    margin-bottom: 22px;
+  }
+
+  .reading-text {
+    font-size: 16px;
+    line-height: 1.72;
+  }
+
+  .reader-controls {
+    font-size: 9px;
+  }
+
+  .reader-controls > span {
+    text-align: center;
+  }
+
+  .audio-content {
+    padding-top: 25px;
+  }
+}
+
+@media (max-width: 380px) {
+  .library-page {
+    padding: 0 16px;
+  }
+
+  .current-card {
+    gap: 12px;
+    padding: 13px;
+  }
+
+  .book-cover-featured {
+    width: 103px;
+  }
+
+  .current-details h3 {
+    font-size: 17px;
+  }
+
+  .progress-meta {
+    font-size: 8px;
+  }
+
+  .book-shelf {
+    gap: 11px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    scroll-behavior: auto !important;
+    transition-duration: 0.01ms !important;
+  }
+}

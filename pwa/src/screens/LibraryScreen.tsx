@@ -132,9 +132,6 @@ export default function LibraryScreen({
             {filteredBooks.map((book) => (
               <article className="shelf-item" key={book.id} role="listitem">
                 <div className="shelf-cover-wrap">
-                  {book.id === currentBookId && (
-                    <span className="current-book-badge">CURRENTLY READING</span>
-                  )}
                   <button
                     className="shelf-cover-button"
                     onClick={() => onOpenBook(book)}

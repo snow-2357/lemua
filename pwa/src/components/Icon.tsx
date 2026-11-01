@@ -1,13 +1,12 @@
 import type { IconName } from '../types'
 
-const paths: Record<IconName, string> = {
+const paths: Record<Exclude<IconName, 'more'>, string> = {
   book: 'M4 5.5A2.5 2.5 0 0 1 6.5 3H20v17H6.5A2.5 2.5 0 0 1 4 17.5zm0 0v12',
   check: 'm5 12 4 4L19 6',
   'chevron-left': 'm15 18-6-6 6-6',
   'chevron-right': 'm9 18 6-6-6-6',
   close: 'M18 6 6 18M6 6l12 12',
   moon: 'M20.9 13A9 9 0 0 1 11 3.1 9 9 0 1 0 20.9 13Z',
-  more: 'M5 12h.01M12 12h.01M19 12h.01',
   play: 'm8 5 12 7-12 7z',
   plus: 'M12 5v14m-7-7h14',
   search: 'm20 20-4.5-4.5M18 10.5a7.5 7.5 0 1 1-15 0 7.5 7.5 0 0 1 15 0Z',
@@ -34,7 +33,15 @@ export default function Icon({
       strokeLinecap="round"
       strokeLinejoin="round"
     >
-      <path d={paths[name]} />
+      {name === 'more' ? (
+        <>
+          <circle cx="5" cy="12" r="1.5" fill="currentColor" />
+          <circle cx="12" cy="12" r="1.5" fill="currentColor" />
+          <circle cx="19" cy="12" r="1.5" fill="currentColor" />
+        </>
+      ) : (
+        <path d={paths[name]} />
+      )}
     </svg>
   )
 }

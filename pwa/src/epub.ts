@@ -54,6 +54,32 @@ function getMetadataValue(document: Document, name: string): string | undefined 
     .find((value): value is string => Boolean(value))
 }
 
+export function isContentsChapterTitle(title: string): boolean {
+  return /^(?:table of )?contents(?: page)?$/i.test(title.replace(/\s+/g, ' ').trim())
+}
+
+function isContentsDocument(document: Document): boolean {
+  const hasTocSemantics = Array.from(document.querySelectorAll('*')).some((element) =>
+    Array.from(element.attributes).some((attribute) => {
+      const values = attribute.value.toLowerCase().split(/\s+/)
+      return (
+        (attribute.localName.toLowerCase() === 'type' && values.includes('toc')) ||
+        (attribute.localName.toLowerCase() === 'role' && values.includes('doc-toc'))
+      )
+    }),
+  )
+  if (hasTocSemantics) return true
+
+  const heading = document.querySelector('h1, h2, h3')?.textContent
+    ?.replace(/\s+/g, ' ')
+    .trim()
+  return Boolean(
+    heading &&
+      isContentsChapterTitle(heading) &&
+      document.querySelector('a[href]'),
+  )
+}
+
 export async function parseEpub(file: File): Promise<ImportedBook> {
   if (!file.name.toLowerCase().endsWith('.epub')) {
     throw new Error('Choose a file with the .epub extension.')
@@ -114,7 +140,10 @@ export async function parseEpub(file: File): Promise<ImportedBook> {
   const manifest = new Map(
     localNameElements(packageDocument, 'item').map((item) => [
       item.getAttribute('id') ?? '',
-      item.getAttribute('href') ?? '',
+      {
+        href: item.getAttribute('href') ?? '',
+        properties: item.getAttribute('properties') ?? '',
+      },
     ]),
   )
   const packageDirectory = normalizedPackagePath.slice(
@@ -124,10 +153,10 @@ export async function parseEpub(file: File): Promise<ImportedBook> {
   const chapters: EpubChapter[] = []
 
   for (const itemRef of localNameElements(packageDocument, 'itemref')) {
-    const href = manifest.get(itemRef.getAttribute('idref') ?? '')
-    if (!href) continue
+    const item = manifest.get(itemRef.getAttribute('idref') ?? '')
+    if (!item || item.properties.split(/\s+/).includes('nav')) continue
 
-    const chapterPath = resolveArchivePath(packageDirectory, href)
+    const chapterPath = resolveArchivePath(packageDirectory, item.href)
     const chapterFile = archive[chapterPath]
     if (!chapterFile) continue
 
@@ -135,6 +164,8 @@ export async function parseEpub(file: File): Promise<ImportedBook> {
       strFromU8(chapterFile),
       'text/html',
     )
+    if (isContentsDocument(document)) continue
+
     const title = document.querySelector('h1, h2, h3')?.textContent?.trim()
     const paragraphs = makeParagraphs(document)
     if (paragraphs.length > 0) {

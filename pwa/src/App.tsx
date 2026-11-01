@@ -4,7 +4,7 @@ import AudioPreviewScreen from './screens/AudioPreviewScreen'
 import LibraryScreen from './screens/LibraryScreen'
 import ProfileScreen from './screens/ProfileScreen'
 import ReaderScreen from './screens/ReaderScreen'
-import { parseEpub } from './epub'
+import { isContentsChapterTitle, parseEpub } from './epub'
 import {
   loadImportedBooks,
   loadSettings,
@@ -32,8 +32,11 @@ function App() {
   const [settingsLoaded, setSettingsLoaded] = useState(false)
 
   const activeBook = importedBooks.find((book) => book.id === activeBookId)
-  const chapterTitles = activeBook?.chapters.map((chapter) => chapter.title) ?? []
-  const activeChapter = activeBook?.chapters[chapterIndex]
+  const chapters = activeBook?.chapters.filter(
+    (chapter, index) => index !== 0 || !isContentsChapterTitle(chapter.title),
+  ) ?? []
+  const chapterTitles = chapters.map((chapter) => chapter.title)
+  const activeChapter = chapters[chapterIndex]
   const pageCount = activeChapter
     ? Math.max(1, Math.ceil(activeChapter.paragraphs.length / 3))
     : 1

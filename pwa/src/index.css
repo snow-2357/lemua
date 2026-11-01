@@ -26,6 +26,15 @@ body {
   min-height: 100svh;
 }
 
+.settings-loading {
+  align-items: center;
+  color: #777168;
+  display: flex;
+  font-size: 13px;
+  justify-content: center;
+  min-height: 100svh;
+}
+
 button,
 input {
   font: inherit;

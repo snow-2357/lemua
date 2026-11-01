@@ -6,7 +6,7 @@ type Props = {
   isDark: boolean
   onBack: () => void
   onToggleTheme: () => void
-  onSaveName: (name: string) => void
+  onSaveName: (name: string) => void | Promise<void>
 }
 
 export default function ProfileScreen({

@@ -1,10 +1,11 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import './App.css'
 import AudioPreviewScreen from './screens/AudioPreviewScreen'
 import LibraryScreen from './screens/LibraryScreen'
 import ProfileScreen from './screens/ProfileScreen'
 import ReaderScreen from './screens/ReaderScreen'
 import { books } from './data'
+import { loadSettings, persistSettings } from './settings'
 import type { Book } from './types'
 
 type Page = 'library' | 'profile' | 'reader' | 'audio'
@@ -20,8 +21,34 @@ function App() {
   const [isPlaying, setIsPlaying] = useState(false)
   const [speed, setSpeed] = useState(1)
   const [notice, setNotice] = useState('')
+  const [settingsLoaded, setSettingsLoaded] = useState(false)
 
   const activeBook = books.find((book) => book.id === activeBookId) ?? books[0]
+
+  useEffect(() => {
+    let active = true
+
+    loadSettings()
+      .then((settings) => {
+        if (!active) return
+        setName(settings.name)
+        setIsDark(settings.isDark)
+      })
+      .catch((error: unknown) => {
+        console.error('Could not load saved profile settings.', error)
+        if (active) {
+          setNotice('Could not load saved settings. Using defaults.')
+          window.setTimeout(() => setNotice(''), 2600)
+        }
+      })
+      .finally(() => {
+        if (active) setSettingsLoaded(true)
+      })
+
+    return () => {
+      active = false
+    }
+  }, [])
 
   const openBook = (book: Book) => {
     setActiveBookId(book.id)
@@ -35,16 +62,37 @@ function App() {
     window.setTimeout(() => setNotice(''), 2600)
   }
 
-  const saveName = (draftName: string) => {
+  const saveName = async (draftName: string) => {
     const nextName = draftName.trim()
     if (nextName) {
-      setName(nextName)
-      notify('Your profile name has been updated.')
+      try {
+        await persistSettings({ name: nextName })
+        setName(nextName)
+        notify('Your profile name has been updated.')
+      } catch (error) {
+        console.error('Could not save the profile name.', error)
+        notify('Could not save your profile name. Please try again.')
+      }
+    }
+  }
+
+  const toggleTheme = async () => {
+    const nextIsDark = !isDark
+    try {
+      await persistSettings({ isDark: nextIsDark })
+      setIsDark(nextIsDark)
+    } catch (error) {
+      console.error('Could not save the appearance setting.', error)
+      notify('Could not save your appearance setting. Please try again.')
     }
   }
 
   const goBackToLibrary = () => setPage('library')
   const progress = Math.min(activeBook.progress + readerPage * 3, 100)
+
+  if (!settingsLoaded) {
+    return <main className="settings-loading" role="status">Loading your library…</main>
+  }
 
   return (
     <div className={`app-shell${isDark ? ' theme-dark' : ''}`}>
@@ -63,7 +111,7 @@ function App() {
           name={name}
           isDark={isDark}
           onBack={goBackToLibrary}
-          onToggleTheme={() => setIsDark(!isDark)}
+          onToggleTheme={toggleTheme}
           onSaveName={saveName}
         />
       )}

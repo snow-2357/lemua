@@ -1,3 +1,5 @@
+import type { ImportedBook } from './types'
+
 export type UserSettings = {
   name: string
   isDark: boolean
@@ -5,6 +7,7 @@ export type UserSettings = {
 
 const databaseName = 'lemua'
 const storeName = 'settings'
+const booksStoreName = 'books'
 const settingsKey = 'user-preferences'
 const defaultSettings: UserSettings = { name: 'Jamie', isDark: false }
 
@@ -14,10 +17,16 @@ function openDatabase(): Promise<IDBDatabase> {
   if (databasePromise) return databasePromise
 
   const pending = new Promise<IDBDatabase>((resolve, reject) => {
-    const request = indexedDB.open(databaseName, 1)
+    const request = indexedDB.open(databaseName, 2)
 
     request.onupgradeneeded = () => {
-      request.result.createObjectStore(storeName, { keyPath: 'id' })
+      const database = request.result
+      if (!database.objectStoreNames.contains(storeName)) {
+        database.createObjectStore(storeName, { keyPath: 'id' })
+      }
+      if (!database.objectStoreNames.contains(booksStoreName)) {
+        database.createObjectStore(booksStoreName, { keyPath: 'id' })
+      }
     }
     request.onsuccess = () => {
       const database = request.result
@@ -99,6 +108,46 @@ export async function persistSettings(
     }
     transaction.onabort = () => {
       reject(transaction.error ?? new Error('Saving settings was aborted.'))
+    }
+  })
+}
+
+export async function loadImportedBooks(): Promise<ImportedBook[]> {
+  const database = await openDatabase()
+  const transaction = database.transaction(booksStoreName, 'readonly')
+  const request = transaction.objectStore(booksStoreName).getAll()
+
+  return new Promise((resolve, reject) => {
+    request.onsuccess = () => {
+      const books = request.result as ImportedBook[]
+      resolve(
+        books.sort(
+          (left, right) => (right.lastReadAt ?? 0) - (left.lastReadAt ?? 0),
+        ),
+      )
+    }
+    request.onerror = () => {
+      reject(request.error ?? new Error('Could not read imported books.'))
+    }
+  })
+}
+
+export async function persistLastRead(book: ImportedBook): Promise<void> {
+  await persistImportedBook({ ...book, lastReadAt: Date.now() })
+}
+
+export async function persistImportedBook(book: ImportedBook): Promise<void> {
+  const database = await openDatabase()
+
+  await new Promise<void>((resolve, reject) => {
+    const transaction = database.transaction(booksStoreName, 'readwrite')
+    transaction.objectStore(booksStoreName).put(book)
+    transaction.oncomplete = () => resolve()
+    transaction.onerror = () => {
+      reject(transaction.error ?? new Error('Could not save this EPUB.'))
+    }
+    transaction.onabort = () => {
+      reject(transaction.error ?? new Error('Saving this EPUB was aborted.'))
     }
   })
 }

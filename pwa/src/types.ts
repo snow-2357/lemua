@@ -6,6 +6,19 @@ export type Book = {
   mark: string
   progress: number
   subtitle: string
+  isEpub?: boolean
+}
+
+export type EpubChapter = {
+  title: string
+  paragraphs: string[]
+}
+
+export type ImportedBook = Book & {
+  isEpub: true
+  file: Blob
+  chapters: EpubChapter[]
+  lastReadAt?: number
 }
 
 export type IconName =

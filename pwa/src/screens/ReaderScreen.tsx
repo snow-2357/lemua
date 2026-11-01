@@ -1,13 +1,16 @@
 import { useState } from 'react'
-import { chapters, pageText } from '../data'
 import type { Book } from '../types'
 import Icon from '../components/Icon'
 import Waveform from '../components/Waveform'
+import { truncateText } from '../utils/truncateText'
 
 type Props = {
   book: Book
+  chapterTitles: string[]
+  chapterParagraphs: string[]
   chapterIndex: number
   readerPage: number
+  pageCount: number
   progress: number
   onBack: () => void
   onOpenAudio: () => void
@@ -17,8 +20,11 @@ type Props = {
 
 export default function ReaderScreen({
   book,
+  chapterTitles,
+  chapterParagraphs,
   chapterIndex,
   readerPage,
+  pageCount,
   progress,
   onBack,
   onOpenAudio,
@@ -36,12 +42,15 @@ export default function ReaderScreen({
   }
 
   const nextPage = () => {
-    if (readerPage < 2) onChangePage(readerPage + 1)
+    if (readerPage < pageCount - 1) onChangePage(readerPage + 1)
     else {
-      onChangeChapter((chapterIndex + 1) % chapters.length)
+      onChangeChapter((chapterIndex + 1) % chapterTitles.length)
       onChangePage(0)
     }
   }
+
+  const displayedParagraphs = chapterParagraphs
+    .slice(readerPage * 3, readerPage * 3 + 3)
 
   return (
     <main className="reader-page">
@@ -50,7 +59,7 @@ export default function ReaderScreen({
           <Icon name="chevron-left" />
         </button>
         <div className="reader-book-info">
-          <strong>{book.title}</strong>
+          <strong title={book.title}>{truncateText(book.title, 36)}</strong>
           <span>{book.author}</span>
         </div>
         <button className="contents-button" onClick={() => setShowContents(true)}>
@@ -62,14 +71,13 @@ export default function ReaderScreen({
           <div className="chapter-label">
             CHAPTER {String(chapterIndex + 1).padStart(2, '0')}
           </div>
-          <h1>{chapters[chapterIndex]}</h1>
+          <h1>{chapterTitles[chapterIndex]}</h1>
           <div className="chapter-rule"><span>✦</span></div>
-          <p className="reading-text">{pageText[readerPage]}</p>
-          <p className="reading-text">
-            Beyond the old stone wall, the afternoon light rested on the leaves.
-            For the first time in a long while, the house seemed to be holding
-            its breath for something good.
-          </p>
+          {displayedParagraphs.map((paragraph, index) => (
+            <p className="reading-text" key={`${readerPage}-${index}`}>
+              {paragraph}
+            </p>
+          ))}
           <span className="page-number">{String(readerPage + 1).padStart(2, '0')}</span>
         </article>
       </section>
@@ -95,7 +103,7 @@ export default function ReaderScreen({
             <Icon name="chevron-left" size={22} />
           </button>
           <span>
-            {chapters[chapterIndex]} <i>·</i> Page {readerPage + 1} of 3
+            {chapterTitles[chapterIndex]} <i>·</i> Page {readerPage + 1} of {pageCount}
           </span>
           <button className="page-arrow" aria-label="Next page" onClick={nextPage}>
             <Icon name="chevron-right" size={22} />
@@ -125,7 +133,7 @@ export default function ReaderScreen({
               </button>
             </div>
             <div className="contents-list">
-              {chapters.map((chapter, index) => (
+              {chapterTitles.map((chapter, index) => (
                 <button
                   className={index === chapterIndex ? 'contents-row is-current' : 'contents-row'}
                   key={chapter}

@@ -4,15 +4,23 @@ import AudioPreviewScreen from './screens/AudioPreviewScreen'
 import LibraryScreen from './screens/LibraryScreen'
 import ProfileScreen from './screens/ProfileScreen'
 import ReaderScreen from './screens/ReaderScreen'
-import { books } from './data'
-import { loadSettings, persistSettings } from './settings'
-import type { Book } from './types'
+import { parseEpub } from './epub'
+import {
+  loadImportedBooks,
+  loadSettings,
+  persistImportedBook,
+  persistLastRead,
+  persistSettings,
+} from './settings'
+import type { ImportedBook } from './types'
 
 type Page = 'library' | 'profile' | 'reader' | 'audio'
 
 function App() {
   const [page, setPage] = useState<Page>('library')
-  const [activeBookId, setActiveBookId] = useState(books[0].id)
+  const [activeBookId, setActiveBookId] = useState<string | null>(null)
+  const [importedBooks, setImportedBooks] = useState<ImportedBook[]>([])
+  const [isImporting, setIsImporting] = useState(false)
   const [search, setSearch] = useState('')
   const [name, setName] = useState('Jamie')
   const [isDark, setIsDark] = useState(false)
@@ -23,21 +31,50 @@ function App() {
   const [notice, setNotice] = useState('')
   const [settingsLoaded, setSettingsLoaded] = useState(false)
 
-  const activeBook = books.find((book) => book.id === activeBookId) ?? books[0]
+  const activeBook = importedBooks.find((book) => book.id === activeBookId)
+  const chapterTitles = activeBook?.chapters.map((chapter) => chapter.title) ?? []
+  const activeChapter = activeBook?.chapters[chapterIndex]
+  const pageCount = activeChapter
+    ? Math.max(1, Math.ceil(activeChapter.paragraphs.length / 3))
+    : 1
+  const audioExcerpt =
+    activeChapter?.paragraphs
+      .slice(readerPage * 3, readerPage * 3 + 3)
+      .join(' ') ??
+    ''
+
+  const notify = (message: string) => {
+    setNotice(message)
+    window.setTimeout(() => setNotice(''), 2600)
+  }
 
   useEffect(() => {
     let active = true
 
-    loadSettings()
-      .then((settings) => {
+    Promise.allSettled([loadSettings(), loadImportedBooks()])
+      .then(([settingsResult, importedBooksResult]) => {
         if (!active) return
-        setName(settings.name)
-        setIsDark(settings.isDark)
-      })
-      .catch((error: unknown) => {
-        console.error('Could not load saved profile settings.', error)
-        if (active) {
-          setNotice('Could not load saved settings. Using defaults.')
+
+        if (settingsResult.status === 'fulfilled') {
+          setName(settingsResult.value.name)
+          setIsDark(settingsResult.value.isDark)
+        } else {
+          console.error('Could not load saved profile settings.', settingsResult.reason)
+        }
+
+        if (importedBooksResult.status === 'fulfilled') {
+          const savedBooks = importedBooksResult.value
+          setImportedBooks(savedBooks)
+          setActiveBookId(savedBooks[0]?.id ?? null)
+        } else {
+          console.error('Could not load imported books.', importedBooksResult.reason)
+        }
+
+        if (
+          settingsResult.status === 'rejected' ||
+          importedBooksResult.status === 'rejected'
+        ) {
+          setNotice('Some saved data could not be loaded.')
           window.setTimeout(() => setNotice(''), 2600)
         }
       })
@@ -50,16 +87,39 @@ function App() {
     }
   }, [])
 
-  const openBook = (book: Book) => {
+  const openBook = (book: ImportedBook) => {
+    window.scrollTo(0, 0)
     setActiveBookId(book.id)
     setChapterIndex(0)
     setReaderPage(0)
     setPage('reader')
+    const updatedBook = { ...book, lastReadAt: Date.now() }
+    setImportedBooks((currentBooks) =>
+      [updatedBook, ...currentBooks.filter((current) => current.id !== book.id)],
+    )
+    void persistLastRead(book).catch((error: unknown) => {
+      console.error('Could not save recent reading activity.', error)
+      notify('Could not save this book as your current read.')
+    })
   }
 
-  const notify = (message: string) => {
-    setNotice(message)
-    window.setTimeout(() => setNotice(''), 2600)
+  const importBook = async (file: File) => {
+    setIsImporting(true)
+    try {
+      const importedBook = await parseEpub(file)
+      await persistImportedBook(importedBook)
+      setImportedBooks((currentBooks) => [importedBook, ...currentBooks])
+      notify(`“${importedBook.title}” was added to your bookshelf.`)
+    } catch (error) {
+      console.error('Could not import EPUB.', error)
+      notify(
+        error instanceof Error
+          ? error.message
+          : 'Could not import this EPUB. Please try another file.',
+      )
+    } finally {
+      setIsImporting(false)
+    }
   }
 
   const saveName = async (draftName: string) => {
@@ -88,7 +148,9 @@ function App() {
   }
 
   const goBackToLibrary = () => setPage('library')
-  const progress = Math.min(activeBook.progress + readerPage * 3, 100)
+  const progress = activeBook
+    ? Math.min(activeBook.progress + readerPage * 3, 100)
+    : 0
 
   if (!settingsLoaded) {
     return <main className="settings-loading" role="status">Loading your library…</main>
@@ -99,11 +161,14 @@ function App() {
       {page === 'library' && (
         <LibraryScreen
           name={name}
+          books={importedBooks}
+          currentBookId={activeBookId}
           search={search}
+          isImporting={isImporting}
           onSearchChange={setSearch}
           onOpenBook={openBook}
           onOpenProfile={() => setPage('profile')}
-          onNotify={notify}
+          onImportFile={importBook}
         />
       )}
       {page === 'profile' && (
@@ -115,11 +180,14 @@ function App() {
           onSaveName={saveName}
         />
       )}
-      {page === 'reader' && (
+      {page === 'reader' && activeBook && activeChapter && (
         <ReaderScreen
           book={activeBook}
+          chapterTitles={chapterTitles}
+          chapterParagraphs={activeChapter.paragraphs}
           chapterIndex={chapterIndex}
           readerPage={readerPage}
+          pageCount={pageCount}
           progress={progress}
           onBack={goBackToLibrary}
           onOpenAudio={() => {
@@ -130,11 +198,11 @@ function App() {
           onChangePage={setReaderPage}
         />
       )}
-      {page === 'audio' && (
+      {page === 'audio' && activeBook && activeChapter && (
         <AudioPreviewScreen
           book={activeBook}
-          chapterIndex={chapterIndex}
-          readerPage={readerPage}
+          chapterTitle={activeChapter.title}
+          excerpt={audioExcerpt}
           isPlaying={isPlaying}
           speed={speed}
           onBack={() => {

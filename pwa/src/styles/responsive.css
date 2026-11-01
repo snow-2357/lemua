@@ -28,8 +28,8 @@
   }
 
   .welcome-row h1 {
-    font-size: 39px;
-    margin: 13px 0 9px;
+    font-size: 30px;
+    margin: 0;
   }
 
   .mobile-break {
@@ -113,9 +113,8 @@
 
   .book-shelf {
     gap: 14px;
-    grid-template-columns: repeat(3, minmax(0, 1fr));
+    grid-auto-columns: minmax(105px, 30%);
     margin: 16px 0 31px;
-    row-gap: 22px;
   }
 
   .shelf-item .book-cover {

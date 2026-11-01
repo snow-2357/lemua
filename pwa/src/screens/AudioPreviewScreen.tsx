@@ -1,13 +1,13 @@
-import { chapters, pageText } from '../data'
 import type { Book } from '../types'
 import BookCover from '../components/BookCover'
 import Icon from '../components/Icon'
 import Waveform from '../components/Waveform'
+import { truncateText } from '../utils/truncateText'
 
 type Props = {
   book: Book
-  chapterIndex: number
-  readerPage: number
+  chapterTitle: string
+  excerpt: string
   isPlaying: boolean
   speed: number
   onBack: () => void
@@ -17,8 +17,8 @@ type Props = {
 
 export default function AudioPreviewScreen({
   book,
-  chapterIndex,
-  readerPage,
+  chapterTitle,
+  excerpt,
   isPlaying,
   speed,
   onBack,
@@ -37,9 +37,10 @@ export default function AudioPreviewScreen({
       <section className="audio-content">
         <p className="eyebrow">A LISTENING COMPANION</p>
         <BookCover book={book} featured />
-        <h1>{chapters[chapterIndex]}</h1>
+        <h1>{chapterTitle}</h1>
         <p className="audio-book-title">
-          {book.title} <span>by {book.author}</span>
+          <span title={book.title}>{truncateText(book.title, 30)}</span>{' '}
+          <span>by {book.author}</span>
         </p>
         <Waveform progress={isPlaying ? 0.26 : 0} />
         <div className="audio-timeline">
@@ -86,7 +87,7 @@ export default function AudioPreviewScreen({
         </div>
         <div className="excerpt-block">
           <p className="eyebrow">FROM THIS CHAPTER</p>
-          <p>“{pageText[readerPage]}”</p>
+          <p>“{excerpt}”</p>
         </div>
       </section>
     </main>

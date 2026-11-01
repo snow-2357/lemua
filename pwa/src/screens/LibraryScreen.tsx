@@ -2,6 +2,7 @@ import { useMemo, useRef, useState, type ChangeEvent } from 'react'
 import type { ImportedBook } from '../types'
 import BookCover from '../components/BookCover'
 import Icon from '../components/Icon'
+import ProgressBar from '../components/ProgressBar'
 import SectionHeading from '../components/SectionHeading'
 import { truncateText } from '../utils/truncateText'
 
@@ -106,6 +107,7 @@ export default function LibraryScreen({
                   {truncateText(currentBook.title, 32)}
                 </h3>
                 <p className="book-byline">{currentBook.author}</p>
+                <ProgressBar value={currentBook.progress} />
                 <button
                   className="primary-button"
                   onClick={() => onOpenBook(currentBook)}

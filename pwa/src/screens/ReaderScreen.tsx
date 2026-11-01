@@ -35,18 +35,12 @@ export default function ReaderScreen({
 
   const previousPage = () => {
     if (readerPage > 0) onChangePage(readerPage - 1)
-    else if (chapterIndex > 0) {
-      onChangeChapter(chapterIndex - 1)
-      onChangePage(0)
-    }
+    else if (chapterIndex > 0) onChangeChapter(chapterIndex - 1)
   }
 
   const nextPage = () => {
     if (readerPage < pageCount - 1) onChangePage(readerPage + 1)
-    else {
-      onChangeChapter((chapterIndex + 1) % chapterTitles.length)
-      onChangePage(0)
-    }
+    else onChangeChapter((chapterIndex + 1) % chapterTitles.length)
   }
 
   const displayedParagraphs = chapterParagraphs
@@ -139,7 +133,6 @@ export default function ReaderScreen({
                   key={chapter}
                   onClick={() => {
                     onChangeChapter(index)
-                    onChangePage(0)
                     setShowContents(false)
                   }}
                 >

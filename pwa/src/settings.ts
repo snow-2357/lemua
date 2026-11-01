@@ -132,8 +132,18 @@ export async function loadImportedBooks(): Promise<ImportedBook[]> {
   })
 }
 
-export async function persistLastRead(book: ImportedBook): Promise<void> {
-  await persistImportedBook({ ...book, lastReadAt: Date.now() })
+export async function persistLastRead(bookId: string): Promise<void> {
+  await updateImportedBook(bookId, { lastReadAt: Date.now() })
+}
+
+export async function persistReadingPosition(
+  bookId: string,
+  position: Pick<
+    ImportedBook,
+    'lastChapterIndex' | 'lastReaderPage' | 'progress'
+  >,
+): Promise<void> {
+  await updateImportedBook(bookId, position)
 }
 
 export async function persistImportedBook(book: ImportedBook): Promise<void> {
@@ -148,6 +158,38 @@ export async function persistImportedBook(book: ImportedBook): Promise<void> {
     }
     transaction.onabort = () => {
       reject(transaction.error ?? new Error('Saving this EPUB was aborted.'))
+    }
+  })
+}
+
+async function updateImportedBook(
+  bookId: string,
+  changes: Partial<ImportedBook>,
+): Promise<void> {
+  const database = await openDatabase()
+
+  await new Promise<void>((resolve, reject) => {
+    const transaction = database.transaction(booksStoreName, 'readwrite')
+    const store = transaction.objectStore(booksStoreName)
+    const request = store.get(bookId)
+    request.onsuccess = () => {
+      const book = request.result as ImportedBook | undefined
+      if (!book) {
+        reject(new Error('Could not find this saved book.'))
+        transaction.abort()
+        return
+      }
+      store.put({ ...book, ...changes })
+    }
+    request.onerror = () => {
+      reject(request.error ?? new Error('Could not update this saved book.'))
+    }
+    transaction.oncomplete = () => resolve()
+    transaction.onerror = () => {
+      reject(transaction.error ?? new Error('Could not update this saved book.'))
+    }
+    transaction.onabort = () => {
+      reject(transaction.error ?? new Error('Updating this saved book was aborted.'))
     }
   })
 }

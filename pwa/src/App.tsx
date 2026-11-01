@@ -10,11 +10,37 @@ import {
   loadSettings,
   persistImportedBook,
   persistLastRead,
+  persistReadingPosition,
   persistSettings,
 } from './settings'
-import type { ImportedBook } from './types'
+import type { EpubChapter, ImportedBook } from './types'
 
 type Page = 'library' | 'profile' | 'reader' | 'audio'
+
+function readableChapters(book: ImportedBook): EpubChapter[] {
+  return book.chapters.filter(
+    (chapter, index) => index !== 0 || !isContentsChapterTitle(chapter.title),
+  )
+}
+
+function getReadingProgress(
+  chapters: EpubChapter[],
+  chapterIndex: number,
+  readerPage: number,
+): number {
+  const pagesPerChapter = chapters.map((chapter) =>
+    Math.max(1, Math.ceil(chapter.paragraphs.length / 3)),
+  )
+  const totalPages = pagesPerChapter.reduce((total, pages) => total + pages, 0)
+  if (totalPages === 0) return 0
+
+  const pagesBeforeChapter = pagesPerChapter
+    .slice(0, chapterIndex)
+    .reduce((total, pages) => total + pages, 0)
+  const currentChapterPages = pagesPerChapter[chapterIndex] ?? 1
+  const pagesRead = pagesBeforeChapter + Math.min(readerPage + 1, currentChapterPages)
+  return Math.round((pagesRead / totalPages) * 100)
+}
 
 function App() {
   const [page, setPage] = useState<Page>('library')
@@ -32,9 +58,7 @@ function App() {
   const [settingsLoaded, setSettingsLoaded] = useState(false)
 
   const activeBook = importedBooks.find((book) => book.id === activeBookId)
-  const chapters = activeBook?.chapters.filter(
-    (chapter, index) => index !== 0 || !isContentsChapterTitle(chapter.title),
-  ) ?? []
+  const chapters = activeBook ? readableChapters(activeBook) : []
   const chapterTitles = chapters.map((chapter) => chapter.title)
   const activeChapter = chapters[chapterIndex]
   const pageCount = activeChapter
@@ -92,18 +116,64 @@ function App() {
 
   const openBook = (book: ImportedBook) => {
     window.scrollTo(0, 0)
+    const bookChapters = readableChapters(book)
+    const nextChapterIndex = Math.min(
+      book.lastChapterIndex ?? 0,
+      Math.max(0, bookChapters.length - 1),
+    )
+    const chapterPageCount = Math.max(
+      1,
+      Math.ceil((bookChapters[nextChapterIndex]?.paragraphs.length ?? 0) / 3),
+    )
+    const nextReaderPage = Math.min(book.lastReaderPage ?? 0, chapterPageCount - 1)
     setActiveBookId(book.id)
-    setChapterIndex(0)
-    setReaderPage(0)
+    setChapterIndex(nextChapterIndex)
+    setReaderPage(nextReaderPage)
     setPage('reader')
     const updatedBook = { ...book, lastReadAt: Date.now() }
     setImportedBooks((currentBooks) =>
       [updatedBook, ...currentBooks.filter((current) => current.id !== book.id)],
     )
-    void persistLastRead(book).catch((error: unknown) => {
+    void persistLastRead(book.id).catch((error: unknown) => {
       console.error('Could not save recent reading activity.', error)
       notify('Could not save this book as your current read.')
     })
+  }
+
+  const saveReadingPosition = (nextChapterIndex: number, nextReaderPage: number) => {
+    setChapterIndex(nextChapterIndex)
+    setReaderPage(nextReaderPage)
+    if (!activeBook) return
+
+    const progress = getReadingProgress(chapters, nextChapterIndex, nextReaderPage)
+    setImportedBooks((currentBooks) =>
+      currentBooks.map((book) =>
+        book.id === activeBook.id
+          ? {
+              ...book,
+              lastChapterIndex: nextChapterIndex,
+              lastReaderPage: nextReaderPage,
+              progress,
+            }
+          : book,
+      ),
+    )
+    void persistReadingPosition(activeBook.id, {
+      lastChapterIndex: nextChapterIndex,
+      lastReaderPage: nextReaderPage,
+      progress,
+    }).catch((error: unknown) => {
+      console.error('Could not save the reading position.', error)
+      notify('Could not save your reading position.')
+    })
+  }
+
+  const changeChapter = (nextChapterIndex: number) => {
+    saveReadingPosition(nextChapterIndex, 0)
+  }
+
+  const changeReaderPage = (nextReaderPage: number) => {
+    saveReadingPosition(chapterIndex, nextReaderPage)
   }
 
   const importBook = async (file: File) => {
@@ -151,9 +221,7 @@ function App() {
   }
 
   const goBackToLibrary = () => setPage('library')
-  const progress = activeBook
-    ? Math.min(activeBook.progress + readerPage * 3, 100)
-    : 0
+  const progress = getReadingProgress(chapters, chapterIndex, readerPage)
 
   if (!settingsLoaded) {
     return <main className="settings-loading" role="status">Loading your library…</main>
@@ -197,8 +265,8 @@ function App() {
             setIsPlaying(false)
             setPage('audio')
           }}
-          onChangeChapter={setChapterIndex}
-          onChangePage={setReaderPage}
+          onChangeChapter={changeChapter}
+          onChangePage={changeReaderPage}
         />
       )}
       {page === 'audio' && activeBook && activeChapter && (

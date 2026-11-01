@@ -9,6 +9,9 @@
   --line: #e7e1d7;
   --accent: #3e4a40;
   --accent-contrast: #fffefa;
+  --primary-button-bg: var(--accent);
+  --primary-button-hover: #333d35;
+  --primary-button-text: #fffefa;
   --shadow: 0 16px 42px rgba(48, 42, 31, 0.08);
   min-height: 100svh;
   color: var(--ink);
@@ -27,6 +30,9 @@
   --line: #343b46;
   --accent: #c5ad83;
   --accent-contrast: #17191d;
+  --primary-button-bg: #806943;
+  --primary-button-hover: #725c39;
+  --primary-button-text: #fffefa;
   --shadow: 0 18px 48px rgba(0, 0, 0, 0.22);
 }
 
@@ -34,4 +40,3 @@
   min-height: 100svh;
   padding: 0 36px;
 }
-

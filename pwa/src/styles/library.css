@@ -265,8 +265,8 @@
   --cover-color: #849887;
   aspect-ratio: 0.69;
   background:
-    radial-gradient(ellipse at 87% 14%, rgba(255,255,255,.17), transparent 40%),
-    linear-gradient(145deg, rgba(255,255,255,.08), transparent 52%),
+    radial-gradient(ellipse at 87% 14%, rgba(255, 255, 255, .17), transparent 40%),
+    linear-gradient(145deg, rgba(255, 255, 255, .08), transparent 52%),
     var(--cover-color);
   border-radius: 7px 10px 10px 7px;
   box-shadow: 0 11px 20px rgba(31, 30, 25, 0.18);
@@ -282,14 +282,15 @@
 
 .book-cover::after {
   border: 1px solid rgba(255, 249, 237, 0.32);
-  border-radius: 4px;
-  bottom: 9px;
+  border-top-right-radius: 10px;
+  border-bottom-right-radius: 10px;
   content: '';
-  left: 16px;
   pointer-events: none;
   position: absolute;
-  right: 9px;
-  top: 9px;
+  top: 2px;
+  bottom: 2px;
+  left: 14px;
+  right: 2px;
 }
 
 .book-cover-featured {
@@ -298,7 +299,7 @@
 
 .cover-spine {
   background: rgba(26, 29, 24, 0.16);
-  border-right: 1px solid rgba(255,255,255,.19);
+  border-right: 1px solid rgba(255, 255, 255, .19);
   bottom: 0;
   left: 0;
   position: absolute;
@@ -346,7 +347,7 @@
 }
 
 .cover-gloss {
-  background: linear-gradient(120deg, transparent, rgba(255,255,255,.075), transparent);
+  background: linear-gradient(120deg, transparent, rgba(255, 255, 255, .075), transparent);
   bottom: 0;
   height: 100%;
   pointer-events: none;
@@ -419,26 +420,31 @@
 
 .primary-button {
   align-items: center;
-  background: var(--accent);
+  background: var(--primary-button-bg);
   border: 0;
   border-radius: 30px;
-  color: var(--accent-contrast);
+  color: var(--primary-button-text);
   cursor: pointer;
   display: inline-flex;
   font: inherit;
   font-size: 12px;
   font-weight: 600;
-  gap: 10px;
+  gap: 6px;
   justify-content: center;
+  line-height: 1;
   margin-top: 16px;
   min-height: 39px;
   padding: 0 16px;
-  transition: opacity 150ms ease, transform 150ms ease;
+  transition: background-color 150ms ease;
+}
+
+.primary-button > svg {
+  display: block;
+  flex: 0 0 auto;
 }
 
 .primary-button:hover {
-  opacity: 0.9;
-  transform: translateY(-1px);
+  background: var(--primary-button-hover);
 }
 
 .card-sparkle {
@@ -514,8 +520,8 @@
   color: #39352e;
   position: absolute;
   height: 18px;
-  right: 12px;
-  top: 12px;
+  right: 18px;
+  top: 18px;
   width: 18px;
   z-index: 2;
 }
@@ -669,7 +675,7 @@
   opacity: 0.72;
 }
 
-.import-card > svg:last-child {
+.import-card>svg:last-child {
   color: var(--ink-muted);
   flex: 0 0 auto;
 }
@@ -714,7 +720,7 @@
   position: relative;
 }
 
-.milestone-card > div {
+.milestone-card>div {
   min-width: 0;
 }
 

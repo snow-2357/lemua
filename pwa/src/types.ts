@@ -19,6 +19,8 @@ export type ImportedBook = Book & {
   file: Blob
   chapters: EpubChapter[]
   lastReadAt?: number
+  lastChapterIndex?: number
+  lastReaderPage?: number
 }
 
 export type IconName =

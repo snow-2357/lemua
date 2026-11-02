@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import HTMLFlipBook from 'react-pageflip'
 import type { Book } from '../types'
 import Icon from '../components/Icon'
@@ -32,6 +32,20 @@ function wrapParagraph(
   let line = ''
 
   for (const word of words) {
+    if (!line && measure(word) > maxWidth) {
+      let chunk = ''
+      for (const character of word) {
+        if (chunk && measure(chunk + character) > maxWidth) {
+          lines.push(chunk)
+          chunk = character
+        } else {
+          chunk += character
+        }
+      }
+      line = chunk
+      continue
+    }
+
     const candidate = line ? `${line} ${word}` : word
     if (line && measure(candidate) > maxWidth) {
       lines.push(line)
@@ -125,8 +139,12 @@ export default function ReaderScreen({
   onChangePage,
 }: Props) {
   const [showContents, setShowContents] = useState(false)
-  const [pages, setPages] = useState<PageParagraph[][]>([[]])
+  const [paginatedChapter, setPaginatedChapter] = useState<{
+    index: number
+    pages: PageParagraph[][]
+  } | null>(null)
   const [flipSize, setFlipSize] = useState({ width: 0, height: 0 })
+  const [flipBookRevision, setFlipBookRevision] = useState(0)
   const [prefersReducedMotion, setPrefersReducedMotion] = useState(false)
   const readingViewport = useRef<HTMLDivElement>(null)
   const measurementText = useRef<HTMLParagraphElement>(null)
@@ -137,7 +155,13 @@ export default function ReaderScreen({
   const onPageCountChangeRef = useRef(onPageCountChange)
   const onPageTextChangeRef = useRef(onPageTextChange)
   const readerPageRef = useRef(readerPage)
+  const chapterIndexRef = useRef(chapterIndex)
+  const flipBookRevisionRef = useRef(flipBookRevision)
   const layoutSignature = useRef('')
+  const pages = useMemo(
+    () => (paginatedChapter?.index === chapterIndex ? paginatedChapter.pages : []),
+    [chapterIndex, paginatedChapter],
+  )
 
   useEffect(() => {
     const motionPreference = window.matchMedia('(prefers-reduced-motion: reduce)')
@@ -160,9 +184,18 @@ export default function ReaderScreen({
     onPageTextChangeRef.current = onPageTextChange
   }, [onPageTextChange])
 
-  useEffect(() => {
+  useLayoutEffect(() => {
     readerPageRef.current = readerPage
-  }, [readerPage])
+    chapterIndexRef.current = chapterIndex
+    flipBookRevisionRef.current = flipBookRevision
+  }, [chapterIndex, flipBookRevision, readerPage])
+
+  const changeChapter = (index: number, page = 0) => {
+    const nextRevision = flipBookRevisionRef.current + 1
+    flipBookRevisionRef.current = nextRevision
+    setFlipBookRevision(nextRevision)
+    onChangeChapter(index, page)
+  }
 
   useEffect(() => {
     const viewport = readingViewport.current
@@ -221,7 +254,7 @@ export default function ReaderScreen({
         viewport.clientHeight - verticalPadding - headingHeight,
         viewport.clientHeight - verticalPadding,
       )
-      setPages(nextPages)
+      setPaginatedChapter({ index: chapterIndex, pages: nextPages })
       onPageCountChangeRef.current(nextPages.length)
       if (readerPageRef.current >= nextPages.length) {
         onChangePageRef.current(nextPages.length - 1)
@@ -265,7 +298,7 @@ export default function ReaderScreen({
     } else if (chapterIndex > 0) {
       const previousChapter = chapterIndex - 1
       const previousChapterPageCount = chapterPageCounts[previousChapter] ?? 1
-      onChangeChapter(previousChapter, previousChapterPageCount - 1)
+      changeChapter(previousChapter, previousChapterPageCount - 1)
     }
   }
 
@@ -275,7 +308,7 @@ export default function ReaderScreen({
       if (flipBook) flipBook.flipNext()
       else onChangePage(readerPage + 1)
     } else {
-      onChangeChapter((chapterIndex + 1) % chapterTitles.length)
+      changeChapter((chapterIndex + 1) % chapterTitles.length)
     }
   }
 
@@ -295,9 +328,9 @@ export default function ReaderScreen({
       </header>
       <section className="reading-area">
         <div className="reading-viewport" ref={readingViewport}>
-          {flipSize.width > 0 && flipSize.height > 0 && (
+          {flipSize.width > 0 && flipSize.height > 0 && pages.length > 0 && (
             <HTMLFlipBook
-              key={`${chapterIndex}-${flipSize.width}-${flipSize.height}`}
+              key={`${chapterIndex}-${flipBookRevision}-${flipSize.width}-${flipSize.height}`}
               className="reading-book"
               style={{ width: '100%', height: '100%' }}
               ref={flipBookRef}
@@ -322,15 +355,19 @@ export default function ReaderScreen({
               swipeDistance={30}
               showPageCorners={false}
               disableFlipByClick={false}
-              onFlip={(event: { data: number }) => onChangePageRef.current(event.data)}
+              onFlip={(event: { data: number }) => {
+                if (
+                  chapterIndexRef.current === chapterIndex &&
+                  flipBookRevisionRef.current === flipBookRevision
+                ) {
+                  onChangePageRef.current(event.data)
+                }
+              }}
             >
               {pages.map((page, pageIndex) => (
                 <article className="reading-page" key={`${chapterIndex}-${pageIndex}`}>
                   {pageIndex === 0 && (
                     <div className="chapter-heading">
-                      <div className="chapter-label">
-                        CHAPTER {String(chapterIndex + 1).padStart(2, '0')}
-                      </div>
                       <h1>{chapterTitles[chapterIndex]}</h1>
                       <div className="chapter-rule"><span>✦</span></div>
                     </div>
@@ -357,9 +394,6 @@ export default function ReaderScreen({
             aria-hidden="true"
           >
             <div className="chapter-heading" ref={headingRef}>
-              <div className="chapter-label">
-                CHAPTER {String(chapterIndex + 1).padStart(2, '0')}
-              </div>
               <h1>{chapterTitles[chapterIndex]}</h1>
               <div className="chapter-rule"><span>✦</span></div>
             </div>
@@ -425,9 +459,9 @@ export default function ReaderScreen({
               {chapterTitles.map((chapter, index) => (
                 <button
                   className={index === chapterIndex ? 'contents-row is-current' : 'contents-row'}
-                  key={chapter}
+                  key={`${index}-${chapter}`}
                   onClick={() => {
-                    onChangeChapter(index)
+                    changeChapter(index)
                     setShowContents(false)
                   }}
                 >

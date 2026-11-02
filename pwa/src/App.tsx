@@ -20,9 +20,7 @@ import { getFileFingerprint } from './utils/fileFingerprint'
 type Page = 'library' | 'profile' | 'reader' | 'audio'
 
 function readableChapters(book: ImportedBook): EpubChapter[] {
-  return book.chapters.filter(
-    (chapter, index) => index !== 0 || !isContentsChapterTitle(chapter.title),
-  )
+  return book.chapters.filter((chapter) => !isContentsChapterTitle(chapter.title))
 }
 
 async function findLegacyDuplicate(

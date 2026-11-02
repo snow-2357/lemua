@@ -28,6 +28,74 @@ function resolveArchivePath(basePath: string, href: string): string {
   return decodeURIComponent(path.replace(/^\/+/, ''))
 }
 
+function getNavigationTitles(
+  archive: ReturnType<typeof unzipSync>,
+  manifest: Map<string, { href: string; properties: string; mediaType: string }>,
+  packageDirectory: string,
+): Map<string, string> {
+  const titles = new Map<string, string>()
+
+  for (const item of manifest.values()) {
+    const isNcx = item.mediaType === 'application/x-dtbncx+xml' || /\.ncx$/i.test(item.href)
+    if (!isNcx && !item.properties.split(/\s+/).includes('nav')) continue
+
+    const navigationPath = resolveArchivePath(packageDirectory, item.href)
+    const navigationFile = archive[navigationPath]
+    if (!navigationFile) continue
+
+    const addTitle = (href: string, title: string) => {
+      const normalizedTitle = title.replace(/\s+/g, ' ').trim()
+      if (!href || !normalizedTitle) return
+      const targetPath = resolveArchivePath(
+        navigationPath.slice(0, navigationPath.lastIndexOf('/') + 1),
+        href,
+      )
+      if (!titles.has(targetPath)) titles.set(targetPath, normalizedTitle)
+    }
+
+    if (isNcx) {
+      const document = parseXml(strFromU8(navigationFile), 'table of contents')
+      for (const point of localNameElements(document, 'navPoint')) {
+        const label = localNameElements(point, 'navLabel')[0]
+        const title = label && localNameElements(label, 'text')[0]?.textContent
+        const href = localNameElements(point, 'content')[0]?.getAttribute('src')
+        if (href && title) addTitle(href, title)
+      }
+      continue
+    }
+
+    const document = new DOMParser().parseFromString(
+      strFromU8(navigationFile),
+      'text/html',
+    )
+    const navigation = Array.from(document.querySelectorAll('nav')).find((element) =>
+      Array.from(element.attributes).some((attribute) => {
+        const name = attribute.localName.toLowerCase()
+        const values = attribute.value.toLowerCase().split(/\s+/)
+        return (
+          (name === 'type' && values.includes('toc')) ||
+          (name === 'role' && values.includes('doc-toc'))
+        )
+      }),
+    ) ?? document.querySelector('nav')
+    for (const link of navigation?.querySelectorAll('a[href]') ?? []) {
+      addTitle(link.getAttribute('href') ?? '', link.textContent ?? '')
+    }
+  }
+
+  return titles
+}
+
+function isStandaloneUrl(text: string): boolean {
+  const value = text.trim().replace(/^[[(<{]+|[)\]}>.,;!?]+$/g, '')
+  return /^(?:(?:https?|ftp):\/\/|www\.)\S+$/i.test(value) ||
+    /^(?:[a-z0-9](?:[a-z0-9-]*[a-z0-9])?\.)+[a-z]{2,}(?::\d+)?(?:[/?#]\S*)?$/i.test(value)
+}
+
+function filterStandaloneUrls(paragraphs: string[]): string[] {
+  return paragraphs.filter((paragraph) => !isStandaloneUrl(paragraph))
+}
+
 function makeParagraphs(document: Document): string[] {
   document.querySelectorAll('script, style, noscript, svg').forEach((element) => {
     element.remove()
@@ -35,17 +103,17 @@ function makeParagraphs(document: Document): string[] {
 
   const paragraphs = Array.from(document.querySelectorAll('p'))
     .map((element) => element.textContent?.replace(/\s+/g, ' ').trim() ?? '')
-    .filter(Boolean)
+    .filter((paragraph) => paragraph && !isStandaloneUrl(paragraph))
 
   if (paragraphs.length > 0) return paragraphs
 
   const blocks = Array.from(document.querySelectorAll('blockquote, li'))
     .map((element) => element.textContent?.replace(/\s+/g, ' ').trim() ?? '')
-    .filter(Boolean)
+    .filter((paragraph) => paragraph && !isStandaloneUrl(paragraph))
   if (blocks.length > 0) return blocks
 
   const text = document.body.textContent?.replace(/\s+/g, ' ').trim() ?? ''
-  return text ? [text] : []
+  return filterStandaloneUrls(text ? [text] : [])
 }
 
 function getMetadataValue(document: Document, name: string): string | undefined {
@@ -58,26 +126,43 @@ export function isContentsChapterTitle(title: string): boolean {
   return /^(?:table of )?contents(?: page)?$/i.test(title.replace(/\s+/g, ' ').trim())
 }
 
+function isNonNarrativeSectionTitle(title: string, bookTitle: string): boolean {
+  const normalizedTitle = title.replace(/\s+/g, ' ').trim()
+  return (
+    isContentsChapterTitle(normalizedTitle) ||
+    normalizedTitle.localeCompare(bookTitle.trim(), undefined, {
+      sensitivity: 'accent',
+    }) === 0 ||
+    /^(?:cover(?: page)?|title page|critical acclaim\b|other books by\b|front ?matter\b|dedication\b|epigram\b|copyright\b|acknowledg(?:e)?ments\b|titles available\b|about the author\b|part\s+\d+\b)/i.test(
+      normalizedTitle,
+    )
+  )
+}
+
 function isContentsDocument(document: Document): boolean {
   const hasTocSemantics = Array.from(document.querySelectorAll('*')).some((element) =>
     Array.from(element.attributes).some((attribute) => {
-      const values = attribute.value.toLowerCase().split(/\s+/)
+      const name = attribute.localName.toLowerCase()
+      const value = attribute.value.toLowerCase()
+      const values = value.split(/\s+/)
       return (
-        (attribute.localName.toLowerCase() === 'type' && values.includes('toc')) ||
-        (attribute.localName.toLowerCase() === 'role' && values.includes('doc-toc'))
+        (name === 'type' && values.includes('toc')) ||
+        (name === 'role' && values.includes('doc-toc')) ||
+        ((name === 'id' || name === 'class' || name === 'aria-label') &&
+          /(?:^|[^a-z0-9])(?:toc|table[\s_-]?of[\s_-]?contents?)(?:$|[^a-z0-9])/.test(value))
       )
     }),
   )
   if (hasTocSemantics) return true
 
-  const heading = document.querySelector('h1, h2, h3')?.textContent
+  const heading = document.querySelector('h1, h2, h3, h4, h5, h6')?.textContent
     ?.replace(/\s+/g, ' ')
     .trim()
-  return Boolean(
-    heading &&
-      isContentsChapterTitle(heading) &&
-      document.querySelector('a[href]'),
-  )
+  if (isContentsChapterTitle(heading ?? '') || isContentsChapterTitle(document.title)) {
+    return true
+  }
+
+  return false
 }
 
 export async function parseEpub(file: File): Promise<ImportedBook> {
@@ -143,6 +228,7 @@ export async function parseEpub(file: File): Promise<ImportedBook> {
       {
         href: item.getAttribute('href') ?? '',
         properties: item.getAttribute('properties') ?? '',
+        mediaType: item.getAttribute('media-type') ?? '',
       },
     ]),
   )
@@ -150,6 +236,11 @@ export async function parseEpub(file: File): Promise<ImportedBook> {
     0,
     normalizedPackagePath.lastIndexOf('/') + 1,
   )
+  const bookTitle =
+    getMetadataValue(packageDocument, 'title') ||
+    file.name.replace(/\.epub$/i, '')
+  const author = getMetadataValue(packageDocument, 'creator') || 'Unknown author'
+  const navigationTitles = getNavigationTitles(archive, manifest, packageDirectory)
   const chapters: EpubChapter[] = []
 
   for (const itemRef of localNameElements(packageDocument, 'itemref')) {
@@ -159,6 +250,7 @@ export async function parseEpub(file: File): Promise<ImportedBook> {
     const chapterPath = resolveArchivePath(packageDirectory, item.href)
     const chapterFile = archive[chapterPath]
     if (!chapterFile) continue
+    if (navigationTitles.size > 0 && !navigationTitles.has(chapterPath)) continue
 
     const document = new DOMParser().parseFromString(
       strFromU8(chapterFile),
@@ -166,10 +258,16 @@ export async function parseEpub(file: File): Promise<ImportedBook> {
     )
     if (isContentsDocument(document)) continue
 
-    const title = document.querySelector('h1, h2, h3')?.textContent?.trim()
+    const heading = document
+      .querySelector('h1, h2, h3, h4, h5, h6')
+      ?.textContent?.replace(/\s+/g, ' ')
+      .trim()
+    const chapterTitle =
+      navigationTitles.get(chapterPath) || heading || document.title.trim()
+    if (isNonNarrativeSectionTitle(chapterTitle, bookTitle)) continue
     const paragraphs = makeParagraphs(document)
     if (paragraphs.length > 0) {
-      chapters.push({ title: title || `Chapter ${chapters.length + 1}`, paragraphs })
+      chapters.push({ title: chapterTitle, paragraphs })
     }
   }
 
@@ -177,10 +275,6 @@ export async function parseEpub(file: File): Promise<ImportedBook> {
     throw new Error('No readable chapters were found in this EPUB.')
   }
 
-  const title =
-    getMetadataValue(packageDocument, 'title') ||
-    file.name.replace(/\.epub$/i, '')
-  const author = getMetadataValue(packageDocument, 'creator') || 'Unknown author'
   const coverIndex = chapters.length % coverColors.length
   const id =
     typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function'
@@ -189,7 +283,7 @@ export async function parseEpub(file: File): Promise<ImportedBook> {
 
   return {
     id,
-    title,
+    title: bookTitle,
     author,
     color: coverColors[coverIndex],
     mark: coverMarks[coverIndex],

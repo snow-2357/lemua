@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
+import type { MouseEvent } from 'react'
 import type { Book } from '../types'
 import Icon from '../components/Icon'
 import Waveform from '../components/Waveform'
@@ -230,6 +231,14 @@ export default function ReaderScreen({
     else onChangeChapter((chapterIndex + 1) % chapterTitles.length)
   }
 
+  const handleReadingTap = (event: MouseEvent<HTMLDivElement>) => {
+    if (window.getSelection()?.isCollapsed === false) return
+
+    const { left, width } = event.currentTarget.getBoundingClientRect()
+    if (event.clientX < left + width / 2) previousPage()
+    else nextPage()
+  }
+
   return (
     <main className="reader-page">
       <header className="reader-header">
@@ -245,7 +254,7 @@ export default function ReaderScreen({
         </button>
       </header>
       <section className="reading-area">
-        <div className="reading-viewport" ref={readingViewport}>
+        <div className="reading-viewport" ref={readingViewport} onClick={handleReadingTap}>
           <div
             className="reading-pages"
           >

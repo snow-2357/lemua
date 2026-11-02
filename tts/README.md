@@ -1,3 +1,20 @@
+---
+pipeline_tag: text-to-speech
+language:
+  - en
+  - es
+  - fr
+  - hi
+  - it
+  - ja
+  - pt
+  - zh
+tags:
+  - kokoro
+  - onnx
+  - text-to-speech
+---
+
 # Kokoro-82M Text-to-Speech (TTS)
 
 Convert text files into natural, expressive speech audio powered by the **Kokoro-82M** ONNX model.
@@ -109,4 +126,3 @@ See [`mobile_bundle/README.md`](file:///d:/ReadMe/mobile_bundle/README.md) for f
 - [`kokoro-v1.0.int8.onnx`](file:///d:/ReadMe/kokoro-v1.0.int8.onnx): Quantized INT8 model graph (~88 MB).
 - [`voices-v1.0.bin`](file:///d:/ReadMe/voices-v1.0.bin): The base voice embeddings binary file.
 - [`requirements.txt`](file:///d:/ReadMe/requirements.txt): Python dependencies (`kokoro-onnx`, `soundfile`, `onnx`).
-

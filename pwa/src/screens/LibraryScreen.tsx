@@ -1,10 +1,17 @@
-import { useMemo, useRef, useState, type ChangeEvent } from 'react'
+import { useEffect, useMemo, useRef, useState, type ChangeEvent } from 'react'
 import type { ImportedBook } from '../types'
 import BookCover from '../components/BookCover'
 import Icon from '../components/Icon'
 import ProgressBar from '../components/ProgressBar'
 import SectionHeading from '../components/SectionHeading'
 import { truncateText } from '../utils/truncateText'
+
+function getBooksPerPage(): number {
+  if (window.innerWidth <= 380) return 2
+  if (window.innerWidth <= 720) return 3
+  if (window.innerWidth <= 1000) return 5
+  return 6
+}
 
 type Props = {
   name: string
@@ -32,6 +39,8 @@ export default function LibraryScreen({
   onImportFile,
 }: Props) {
   const [showBookMenu, setShowBookMenu] = useState<string | null>(null)
+  const [shelfPage, setShelfPage] = useState(0)
+  const [booksPerPage, setBooksPerPage] = useState(getBooksPerPage)
   const fileInput = useRef<HTMLInputElement>(null)
   const currentBook = books.find((book) => book.id === currentBookId)
   const filteredBooks = useMemo(() => {
@@ -43,6 +52,19 @@ export default function LibraryScreen({
         book.author.toLocaleLowerCase().includes(query),
     )
   }, [books, search])
+  const pageCount = Math.ceil(filteredBooks.length / booksPerPage)
+  const currentShelfPage = Math.min(shelfPage, Math.max(0, pageCount - 1))
+  const visibleBooks = filteredBooks.slice(
+    currentShelfPage * booksPerPage,
+    (currentShelfPage + 1) * booksPerPage,
+  )
+
+  useEffect(() => {
+    const updateBooksPerPage = () => setBooksPerPage(getBooksPerPage())
+    window.addEventListener('resize', updateBooksPerPage)
+    return () => window.removeEventListener('resize', updateBooksPerPage)
+  }, [])
+
   const handleFileChange = (event: ChangeEvent<HTMLInputElement>) => {
     const file = event.currentTarget.files?.[0]
     event.currentTarget.value = ''
@@ -50,6 +72,10 @@ export default function LibraryScreen({
   }
 
   const openFilePicker = () => fileInput.current?.click()
+  const handleSearchChange = (value: string) => {
+    setShelfPage(0)
+    onSearchChange(value)
+  }
 
   return (
     <main className="library-page">
@@ -79,14 +105,14 @@ export default function LibraryScreen({
             type="search"
             placeholder="Search your library"
             value={search}
-            onChange={(event) => onSearchChange(event.target.value)}
+            onChange={(event) => handleSearchChange(event.target.value)}
           />
           {search && (
             <button
               type="button"
               className="clear-search"
               aria-label="Clear search"
-              onClick={() => onSearchChange('')}
+              onClick={() => handleSearchChange('')}
             >
               <Icon name="close" size={17} />
             </button>
@@ -127,13 +153,9 @@ export default function LibraryScreen({
           {search ? 'Search results' : 'Your bookshelf'}
         </SectionHeading>
         {filteredBooks.length > 0 ? (
-          <div
-            className="book-shelf"
-            role="list"
-            aria-label="Bookshelf. Scroll horizontally to browse books."
-            tabIndex={0}
-          >
-            {filteredBooks.map((book) => (
+          <>
+            <div className="book-shelf" role="list" aria-label="Bookshelf">
+              {visibleBooks.map((book) => (
               <article className="shelf-item" key={book.id} role="listitem">
                 <div className="shelf-cover-wrap">
                   <button
@@ -172,14 +194,40 @@ export default function LibraryScreen({
                 </p>
                 <p className="shelf-author">{book.author}</p>
               </article>
-            ))}
-          </div>
+              ))}
+            </div>
+            {pageCount > 1 && (
+              <nav className="shelf-pagination" aria-label="Bookshelf pages">
+                <button
+                  type="button"
+                  aria-label="Previous bookshelf page"
+                  disabled={currentShelfPage === 0}
+                  onClick={() => setShelfPage(currentShelfPage - 1)}
+                >
+                  <Icon name="chevron-left" size={18} />
+                </button>
+                <span aria-live="polite">
+                  {currentShelfPage * booksPerPage + 1}–
+                  {Math.min((currentShelfPage + 1) * booksPerPage, filteredBooks.length)}
+                  {' '}of {filteredBooks.length}
+                </span>
+                <button
+                  type="button"
+                  aria-label="Next bookshelf page"
+                  disabled={currentShelfPage >= pageCount - 1}
+                  onClick={() => setShelfPage(currentShelfPage + 1)}
+                >
+                  <Icon name="chevron-right" size={18} />
+                </button>
+              </nav>
+            )}
+          </>
         ) : (
           search ? (
             <div className="empty-search">
               <Icon name="search" size={24} />
               <p>No books match “{search}”</p>
-              <button onClick={() => onSearchChange('')}>Clear search</button>
+              <button onClick={() => handleSearchChange('')}>Clear search</button>
             </div>
           ) : (
             <div className="empty-library">

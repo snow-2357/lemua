@@ -458,21 +458,38 @@
 .book-shelf {
   display: grid;
   gap: 22px;
-  grid-auto-columns: minmax(130px, 160px);
-  grid-auto-flow: column;
-  margin: 19px 0 43px;
-  overflow-x: auto;
-  overscroll-behavior-inline: contain;
-  padding: 5px 2px 14px;
-  scroll-padding-inline: 2px;
-  scroll-snap-type: inline proximity;
-  scrollbar-color: var(--line) transparent;
-  scrollbar-width: thin;
+  grid-template-columns: repeat(6, minmax(0, 1fr));
+  margin: 19px 0 12px;
+  padding: 5px 2px 10px;
 }
 
-.book-shelf:focus-visible {
-  outline: 2px solid var(--accent);
-  outline-offset: 3px;
+.shelf-pagination {
+  align-items: center;
+  color: var(--ink-muted);
+  display: flex;
+  font-size: 11px;
+  gap: 14px;
+  justify-content: center;
+  margin: 0 0 38px;
+}
+
+.shelf-pagination button {
+  align-items: center;
+  background: var(--surface);
+  border: 0;
+  border-radius: 50%;
+  color: var(--accent);
+  cursor: pointer;
+  display: inline-flex;
+  height: 34px;
+  justify-content: center;
+  width: 34px;
+}
+
+.shelf-pagination button:disabled {
+  color: var(--ink-muted);
+  cursor: default;
+  opacity: 0.45;
 }
 
 .epub-file-input {
@@ -482,7 +499,6 @@
 .shelf-item {
   min-width: 0;
   position: relative;
-  scroll-snap-align: start;
 }
 
 .shelf-cover-wrap {

@@ -40,9 +40,12 @@ function getReadingProgress(
   chapters: EpubChapter[],
   chapterIndex: number,
   readerPage: number,
+  measuredPageCounts: Record<number, number>,
 ): number {
-  const pagesPerChapter = chapters.map((chapter) =>
-    Math.max(1, Math.ceil(chapter.paragraphs.length / 3)),
+  const pagesPerChapter = chapters.map(
+    (chapter, index) =>
+      measuredPageCounts[index] ??
+      Math.max(1, Math.ceil(chapter.paragraphs.length / 3)),
   )
   const totalPages = pagesPerChapter.reduce((total, pages) => total + pages, 0)
   if (totalPages === 0) return 0
@@ -65,6 +68,8 @@ function App() {
   const [isDark, setIsDark] = useState(false)
   const [chapterIndex, setChapterIndex] = useState(0)
   const [readerPage, setReaderPage] = useState(0)
+  const [chapterPageCounts, setChapterPageCounts] = useState<Record<number, number>>({})
+  const [audioExcerpt, setAudioExcerpt] = useState('')
   const [isPlaying, setIsPlaying] = useState(false)
   const [speed, setSpeed] = useState(1)
   const [notice, setNotice] = useState('')
@@ -75,15 +80,6 @@ function App() {
   const chapters = activeBook ? readableChapters(activeBook) : []
   const chapterTitles = chapters.map((chapter) => chapter.title)
   const activeChapter = chapters[chapterIndex]
-  const pageCount = activeChapter
-    ? Math.max(1, Math.ceil(activeChapter.paragraphs.length / 3))
-    : 1
-  const audioExcerpt =
-    activeChapter?.paragraphs
-      .slice(readerPage * 3, readerPage * 3 + 3)
-      .join(' ') ??
-    ''
-
   const notify = (message: string) => {
     setNotice(message)
     window.setTimeout(() => setNotice(''), 2600)
@@ -135,14 +131,11 @@ function App() {
       book.lastChapterIndex ?? 0,
       Math.max(0, bookChapters.length - 1),
     )
-    const chapterPageCount = Math.max(
-      1,
-      Math.ceil((bookChapters[nextChapterIndex]?.paragraphs.length ?? 0) / 3),
-    )
-    const nextReaderPage = Math.min(book.lastReaderPage ?? 0, chapterPageCount - 1)
+    const nextReaderPage = book.lastReaderPage ?? 0
     setActiveBookId(book.id)
     setChapterIndex(nextChapterIndex)
     setReaderPage(nextReaderPage)
+    setChapterPageCounts({})
     setPage('reader')
     const updatedBook = { ...book, lastReadAt: Date.now() }
     setImportedBooks((currentBooks) =>
@@ -159,7 +152,12 @@ function App() {
     setReaderPage(nextReaderPage)
     if (!activeBook) return
 
-    const progress = getReadingProgress(chapters, nextChapterIndex, nextReaderPage)
+    const progress = getReadingProgress(
+      chapters,
+      nextChapterIndex,
+      nextReaderPage,
+      chapterPageCounts,
+    )
     setImportedBooks((currentBooks) =>
       currentBooks.map((book) =>
         book.id === activeBook.id
@@ -276,7 +274,12 @@ function App() {
   }
 
   const goBackToLibrary = () => setPage('library')
-  const progress = getReadingProgress(chapters, chapterIndex, readerPage)
+  const progress = getReadingProgress(
+    chapters,
+    chapterIndex,
+    readerPage,
+    chapterPageCounts,
+  )
 
   if (!settingsLoaded) {
     return <main className="settings-loading" role="status">Loading your library…</main>
@@ -314,7 +317,14 @@ function App() {
           chapterParagraphs={activeChapter.paragraphs}
           chapterIndex={chapterIndex}
           readerPage={readerPage}
-          pageCount={pageCount}
+          onPageCountChange={(count) =>
+            setChapterPageCounts((currentCounts) =>
+              currentCounts[chapterIndex] === count
+                ? currentCounts
+                : { ...currentCounts, [chapterIndex]: count },
+            )
+          }
+          onPageTextChange={setAudioExcerpt}
           progress={progress}
           onBack={goBackToLibrary}
           onOpenAudio={() => {

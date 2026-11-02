@@ -180,8 +180,8 @@ function App() {
     })
   }
 
-  const changeChapter = (nextChapterIndex: number) => {
-    saveReadingPosition(nextChapterIndex, 0)
+  const changeChapter = (nextChapterIndex: number, nextReaderPage = 0) => {
+    saveReadingPosition(nextChapterIndex, nextReaderPage)
   }
 
   const changeReaderPage = (nextReaderPage: number) => {
@@ -316,6 +316,7 @@ function App() {
           chapterTitles={chapterTitles}
           chapterParagraphs={activeChapter.paragraphs}
           chapterIndex={chapterIndex}
+          chapterPageCounts={chapterPageCounts}
           readerPage={readerPage}
           onPageCountChange={(count) =>
             setChapterPageCounts((currentCounts) =>

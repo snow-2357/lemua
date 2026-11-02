@@ -74,19 +74,29 @@
   width: 100%;
 }
 
-.reading-pages {
-  display: flex;
-  height: 100%;
+.reading-book {
+  margin: 0 auto;
   width: 100%;
+  height: 100%;
 }
 
 .reading-page {
-  flex: 0 0 100%;
+  background: var(--page);
+  box-sizing: border-box;
   height: 100%;
   margin: 0;
   min-width: 0;
   overflow: hidden;
   padding: 20px 24px;
+  width: 100%;
+}
+
+.reader-measure-page {
+  height: 100%;
+  left: -10000px;
+  position: absolute;
+  top: 0;
+  visibility: hidden;
   width: 100%;
 }
 
@@ -162,8 +172,10 @@
   font-family: Georgia, 'Times New Roman', serif;
   font-size: 10px;
   left: 50%;
+  pointer-events: none;
   position: absolute;
   transform: translateX(-50%);
+  z-index: 2;
 }
 
 .reader-bottom {

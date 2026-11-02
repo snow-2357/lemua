@@ -1,9 +1,20 @@
 import { useEffect, useRef, useState } from 'react'
-import type { MouseEvent } from 'react'
+import HTMLFlipBook from 'react-pageflip'
 import type { Book } from '../types'
 import Icon from '../components/Icon'
 import Waveform from '../components/Waveform'
 import { truncateText } from '../utils/truncateText'
+
+type PageFlipApi = {
+  flipNext: () => void
+  flipPrev: () => void
+  turnToPage: (page: number) => void
+  getCurrentPageIndex: () => number
+}
+
+type PageFlipHandle = {
+  pageFlip: () => PageFlipApi | undefined
+}
 
 type PageParagraph = {
   text: string
@@ -87,13 +98,14 @@ type Props = {
   chapterTitles: string[]
   chapterParagraphs: string[]
   chapterIndex: number
+  chapterPageCounts: Record<number, number>
   readerPage: number
   onPageCountChange: (count: number) => void
   onPageTextChange: (text: string) => void
   progress: number
   onBack: () => void
   onOpenAudio: () => void
-  onChangeChapter: (index: number) => void
+  onChangeChapter: (index: number, page?: number) => void
   onChangePage: (page: number) => void
 }
 
@@ -102,6 +114,7 @@ export default function ReaderScreen({
   chapterTitles,
   chapterParagraphs,
   chapterIndex,
+  chapterPageCounts,
   readerPage,
   onPageCountChange,
   onPageTextChange,
@@ -113,14 +126,27 @@ export default function ReaderScreen({
 }: Props) {
   const [showContents, setShowContents] = useState(false)
   const [pages, setPages] = useState<PageParagraph[][]>([[]])
+  const [flipSize, setFlipSize] = useState({ width: 0, height: 0 })
+  const [prefersReducedMotion, setPrefersReducedMotion] = useState(false)
   const readingViewport = useRef<HTMLDivElement>(null)
   const measurementText = useRef<HTMLParagraphElement>(null)
+  const measurementPage = useRef<HTMLElement>(null)
   const headingRef = useRef<HTMLDivElement>(null)
+  const flipBookRef = useRef<PageFlipHandle>(null)
   const onChangePageRef = useRef(onChangePage)
   const onPageCountChangeRef = useRef(onPageCountChange)
   const onPageTextChangeRef = useRef(onPageTextChange)
   const readerPageRef = useRef(readerPage)
   const layoutSignature = useRef('')
+
+  useEffect(() => {
+    const motionPreference = window.matchMedia('(prefers-reduced-motion: reduce)')
+    const updateMotionPreference = () => setPrefersReducedMotion(motionPreference.matches)
+    updateMotionPreference()
+    motionPreference.addEventListener('change', updateMotionPreference)
+
+    return () => motionPreference.removeEventListener('change', updateMotionPreference)
+  }, [])
 
   useEffect(() => {
     onChangePageRef.current = onChangePage
@@ -141,16 +167,22 @@ export default function ReaderScreen({
   useEffect(() => {
     const viewport = readingViewport.current
     const sample = measurementText.current
-    if (!viewport || !sample) return
+    const page = measurementPage.current
+    if (!viewport || !sample || !page) return
 
     const measurePages = () => {
-      const firstPage = viewport.querySelector<HTMLElement>('.reading-page')
-      if (!firstPage || viewport.clientWidth === 0 || viewport.clientHeight === 0) {
+      if (viewport.clientWidth === 0 || viewport.clientHeight === 0) {
         return
       }
 
-      const pageStyle = window.getComputedStyle(firstPage)
+      const pageStyle = window.getComputedStyle(page)
       const textStyle = window.getComputedStyle(sample)
+      setFlipSize((currentSize) =>
+        currentSize.width === viewport.clientWidth &&
+        currentSize.height === viewport.clientHeight
+          ? currentSize
+          : { width: viewport.clientWidth, height: viewport.clientHeight },
+      )
       const pageWidth =
         viewport.clientWidth -
         Number.parseFloat(pageStyle.paddingLeft) -
@@ -193,8 +225,6 @@ export default function ReaderScreen({
       onPageCountChangeRef.current(nextPages.length)
       if (readerPageRef.current >= nextPages.length) {
         onChangePageRef.current(nextPages.length - 1)
-      } else {
-        viewport.scrollLeft = readerPageRef.current * viewport.clientWidth
       }
     }
 
@@ -210,9 +240,15 @@ export default function ReaderScreen({
   }, [chapterIndex, chapterParagraphs])
 
   useEffect(() => {
-    const viewport = readingViewport.current
-    if (viewport) viewport.scrollLeft = readerPage * viewport.clientWidth
-  }, [readerPage, pages.length])
+    const flipBook = flipBookRef.current?.pageFlip()
+    if (
+      flipBook &&
+      readerPage < pages.length &&
+      flipBook.getCurrentPageIndex() !== readerPage
+    ) {
+      flipBook.turnToPage(readerPage)
+    }
+  }, [readerPage, pages.length, flipSize])
 
   useEffect(() => {
     const text = pages[readerPage]
@@ -222,21 +258,25 @@ export default function ReaderScreen({
   }, [pages, readerPage])
 
   const previousPage = () => {
-    if (readerPage > 0) onChangePage(readerPage - 1)
-    else if (chapterIndex > 0) onChangeChapter(chapterIndex - 1)
+    if (readerPage > 0) {
+      const flipBook = flipBookRef.current?.pageFlip()
+      if (flipBook) flipBook.flipPrev()
+      else onChangePage(readerPage - 1)
+    } else if (chapterIndex > 0) {
+      const previousChapter = chapterIndex - 1
+      const previousChapterPageCount = chapterPageCounts[previousChapter] ?? 1
+      onChangeChapter(previousChapter, previousChapterPageCount - 1)
+    }
   }
 
   const nextPage = () => {
-    if (readerPage < pages.length - 1) onChangePage(readerPage + 1)
-    else onChangeChapter((chapterIndex + 1) % chapterTitles.length)
-  }
-
-  const handleReadingTap = (event: MouseEvent<HTMLDivElement>) => {
-    if (window.getSelection()?.isCollapsed === false) return
-
-    const { left, width } = event.currentTarget.getBoundingClientRect()
-    if (event.clientX < left + width / 2) previousPage()
-    else nextPage()
+    if (readerPage < pages.length - 1) {
+      const flipBook = flipBookRef.current?.pageFlip()
+      if (flipBook) flipBook.flipNext()
+      else onChangePage(readerPage + 1)
+    } else {
+      onChangeChapter((chapterIndex + 1) % chapterTitles.length)
+    }
   }
 
   return (
@@ -254,39 +294,79 @@ export default function ReaderScreen({
         </button>
       </header>
       <section className="reading-area">
-        <div className="reading-viewport" ref={readingViewport} onClick={handleReadingTap}>
-          <div
-            className="reading-pages"
-          >
-            {pages.map((page, pageIndex) => (
-              <article className="reading-page" key={`${chapterIndex}-${pageIndex}`}>
-                {pageIndex === 0 && (
-                  <div className="chapter-heading" ref={headingRef}>
-                    <div className="chapter-label">
-                      CHAPTER {String(chapterIndex + 1).padStart(2, '0')}
+        <div className="reading-viewport" ref={readingViewport}>
+          {flipSize.width > 0 && flipSize.height > 0 && (
+            <HTMLFlipBook
+              key={`${chapterIndex}-${flipSize.width}-${flipSize.height}`}
+              className="reading-book"
+              style={{ width: '100%', height: '100%' }}
+              ref={flipBookRef}
+              width={flipSize.width}
+              height={flipSize.height}
+              size="stretch"
+              minWidth={flipSize.width}
+              maxWidth={flipSize.width}
+              minHeight={flipSize.height}
+              maxHeight={flipSize.height}
+              startPage={Math.min(readerPage, pages.length - 1)}
+              drawShadow
+              flippingTime={prefersReducedMotion ? 1 : 650}
+              usePortrait
+              startZIndex={0}
+              autoSize={false}
+              maxShadowOpacity={0.28}
+              showCover={false}
+              mobileScrollSupport
+              clickEventForward
+              useMouseEvents
+              swipeDistance={30}
+              showPageCorners={false}
+              disableFlipByClick={false}
+              onFlip={(event: { data: number }) => onChangePageRef.current(event.data)}
+            >
+              {pages.map((page, pageIndex) => (
+                <article className="reading-page" key={`${chapterIndex}-${pageIndex}`}>
+                  {pageIndex === 0 && (
+                    <div className="chapter-heading">
+                      <div className="chapter-label">
+                        CHAPTER {String(chapterIndex + 1).padStart(2, '0')}
+                      </div>
+                      <h1>{chapterTitles[chapterIndex]}</h1>
+                      <div className="chapter-rule"><span>✦</span></div>
                     </div>
-                    <h1>{chapterTitles[chapterIndex]}</h1>
-                    <div className="chapter-rule"><span>✦</span></div>
-                  </div>
-                )}
-                {page.map((paragraph, index) => (
-                  <p
-                    className={[
-                      'reading-text',
-                      paragraph.continues ? 'is-continuation' : '',
-                      paragraph.complete ? '' : 'is-split',
-                    ].filter(Boolean).join(' ')}
-                    key={`${chapterIndex}-${pageIndex}-${index}`}
-                  >
-                    {paragraph.text}
-                  </p>
-                ))}
-              </article>
-            ))}
-          </div>
-          <p className="reader-measure-text reading-text" ref={measurementText}>
-            Measure text
-          </p>
+                  )}
+                  {page.map((paragraph, index) => (
+                    <p
+                      className={[
+                        'reading-text',
+                        paragraph.continues ? 'is-continuation' : '',
+                        paragraph.complete ? '' : 'is-split',
+                      ].filter(Boolean).join(' ')}
+                      key={`${chapterIndex}-${pageIndex}-${index}`}
+                    >
+                      {paragraph.text}
+                    </p>
+                  ))}
+                </article>
+              ))}
+            </HTMLFlipBook>
+          )}
+          <article
+            className="reading-page reader-measure-page"
+            ref={measurementPage}
+            aria-hidden="true"
+          >
+            <div className="chapter-heading" ref={headingRef}>
+              <div className="chapter-label">
+                CHAPTER {String(chapterIndex + 1).padStart(2, '0')}
+              </div>
+              <h1>{chapterTitles[chapterIndex]}</h1>
+              <div className="chapter-rule"><span>✦</span></div>
+            </div>
+            <p className="reader-measure-text reading-text" ref={measurementText}>
+              Measure text
+            </p>
+          </article>
           <span className="page-number">{String(readerPage + 1).padStart(2, '0')}</span>
         </div>
       </section>

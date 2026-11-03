@@ -4,7 +4,7 @@ from torch.nn.utils.rnn import pack_padded_sequence, pad_packed_sequence
 
 
 class TTSStudentModel(nn.Module):
-    """Predicts a teacher mel spectrogram from Kokoro phoneme tokens."""
+    """Predicts a teacher mel spectrogram from eSpeak phoneme symbols."""
 
     def __init__(self, vocab_size=10000, hidden_dim=256, max_frames=1600):
         super().__init__()
@@ -38,11 +38,16 @@ class TTSStudentModel(nn.Module):
             nn.Linear(hidden_dim // 2, 1),
         )
 
-    def forward(self, tokens, max_frames):
+    def forward(self, tokens, max_frames, frame_lengths=None):
         if tokens.ndim != 2 or tokens.size(1) == 0:
             raise ValueError("tokens must have shape (batch, non-empty sequence).")
         if max_frames < 1 or max_frames > self.max_frames:
             raise ValueError(f"max_frames must be between 1 and {self.max_frames}.")
+        if frame_lengths is not None:
+            if frame_lengths.ndim != 1 or frame_lengths.size(0) != tokens.size(0):
+                raise ValueError("frame_lengths must have shape (batch,).")
+            if torch.any(frame_lengths < 1) or torch.any(frame_lengths > max_frames):
+                raise ValueError("frame_lengths must be between 1 and max_frames.")
 
         token_mask = tokens.eq(0)
         token_lengths = (~token_mask).sum(dim=1)
@@ -69,9 +74,13 @@ class TTSStudentModel(nn.Module):
         queries = self.frame_positions(positions).unsqueeze(0).expand(
             tokens.size(0), -1, -1
         )
+        frame_padding_mask = None
+        if frame_lengths is not None:
+            frame_padding_mask = positions.unsqueeze(0) >= frame_lengths.unsqueeze(1)
         decoded = self.decoder(
             tgt=queries,
             memory=encoded,
             memory_key_padding_mask=token_mask,
+            tgt_key_padding_mask=frame_padding_mask,
         )
         return self.mel_head(decoded), log_frame_count

@@ -7,9 +7,11 @@ import torchaudio
 from torch.utils.data import Dataset
 from torchaudio.prototype.pipelines import HIFIGAN_VOCODER_V3_LJSPEECH
 
+from frontend import phoneme_token_ids
+
 
 class TTSTeacherDataset(Dataset):
-    """Loads Kokoro phoneme tokens and mel targets from the cached teacher audio."""
+    """Loads phoneme tokens and mel targets from cached teacher audio."""
 
     def __init__(self, cache_dir: str | os.PathLike[str] = "dataset_cache"):
         self.cache_dir = os.fspath(cache_dir)
@@ -24,6 +26,15 @@ class TTSTeacherDataset(Dataset):
         if not self.sentence_dirs:
             raise ValueError(f"No sentence folders found in {self.cache_dir}.")
 
+        self.tokens = []
+        for sentence_dir in self.sentence_dirs:
+            text_path = os.path.join(sentence_dir, "text.txt")
+            with open(text_path, encoding="utf-8") as text_file:
+                text = text_file.read().strip()
+            if not text:
+                raise ValueError(f"Empty training text in {text_path}.")
+            self.tokens.append(phoneme_token_ids(text))
+
         self.sample_rate = int(HIFIGAN_VOCODER_V3_LJSPEECH.sample_rate)
         self.mel_transform = (
             HIFIGAN_VOCODER_V3_LJSPEECH.get_mel_transform()
@@ -34,12 +45,6 @@ class TTSTeacherDataset(Dataset):
 
     def __getitem__(self, idx):
         sentence_dir = self.sentence_dirs[idx]
-        tokens = np.load(os.path.join(sentence_dir, "tokens.npy"))
-        if tokens.ndim != 1 or tokens.size == 0:
-            raise ValueError(f"Invalid phoneme token sequence in {sentence_dir}.")
-        if np.any(tokens < 0) or np.any(tokens >= 10000):
-            raise ValueError(f"Phoneme token IDs must be in [0, 10000) in {sentence_dir}.")
-
         audio, sample_rate = sf.read(
             os.path.join(sentence_dir, "audio.wav"), dtype="float32"
         )
@@ -53,6 +58,6 @@ class TTSTeacherDataset(Dataset):
 
         mel = self.mel_transform(waveform).squeeze(0).transpose(0, 1)
         return {
-            "tokens": torch.from_numpy(tokens.astype(np.int64, copy=False)),
+            "tokens": torch.tensor(self.tokens[idx], dtype=torch.long),
             "mel": mel,
         }

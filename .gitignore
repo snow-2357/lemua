@@ -1,1 +1,3 @@
 *.onnx
+venv
+training/dataset_cache

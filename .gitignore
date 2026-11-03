@@ -2,3 +2,5 @@
 venv
 training/dataset_cache
 training/metadata.csv
+*/__pycache__/
+*.pth

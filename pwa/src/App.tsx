@@ -326,10 +326,6 @@ function App() {
           onPageTextChange={setAudioExcerpt}
           progress={progress}
           onBack={goBackToLibrary}
-          onOpenAudio={() => {
-            setIsPlaying(false)
-            setPage('audio')
-          }}
           onChangeChapter={changeChapter}
           onChangePage={changeReaderPage}
         />

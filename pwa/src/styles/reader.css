@@ -187,10 +187,8 @@
 
 .audio-compact {
   background: var(--surface);
-  border: 0;
   border-radius: 14px;
   color: var(--ink);
-  cursor: pointer;
   display: block;
   padding: 13px 15px 10px;
   text-align: left;

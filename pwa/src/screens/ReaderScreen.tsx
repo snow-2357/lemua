@@ -1,8 +1,8 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import HTMLFlipBook from 'react-pageflip'
 import type { Book } from '../types'
+import ReaderBottom from '../components/ReaderBottom'
 import Icon from '../components/Icon'
-import Waveform from '../components/Waveform'
 import { truncateText } from '../utils/truncateText'
 
 type PageFlipApi = {
@@ -102,9 +102,7 @@ function paginateParagraphs(
     }
   }
 
-  return pages.length > 1 && pages[pages.length - 1].length === 0
-    ? pages.slice(0, -1)
-    : pages
+  return pages.length > 1 && pages[pages.length - 1].length === 0 ? pages.slice(0, -1) : pages
 }
 
 type Props = {
@@ -118,7 +116,6 @@ type Props = {
   onPageTextChange: (text: string) => void
   progress: number
   onBack: () => void
-  onOpenAudio: () => void
   onChangeChapter: (index: number, page?: number) => void
   onChangePage: (page: number) => void
 }
@@ -134,7 +131,6 @@ export default function ReaderScreen({
   onPageTextChange,
   progress,
   onBack,
-  onOpenAudio,
   onChangeChapter,
   onChangePage,
 }: Props) {
@@ -211,8 +207,7 @@ export default function ReaderScreen({
       const pageStyle = window.getComputedStyle(page)
       const textStyle = window.getComputedStyle(sample)
       setFlipSize((currentSize) =>
-        currentSize.width === viewport.clientWidth &&
-        currentSize.height === viewport.clientHeight
+        currentSize.width === viewport.clientWidth && currentSize.height === viewport.clientHeight
           ? currentSize
           : { width: viewport.clientWidth, height: viewport.clientHeight },
       )
@@ -223,8 +218,7 @@ export default function ReaderScreen({
       const lineHeight = Number.parseFloat(textStyle.lineHeight)
       const paragraphGap = Number.parseFloat(textStyle.marginBottom)
       const verticalPadding =
-        Number.parseFloat(pageStyle.paddingTop) +
-        Number.parseFloat(pageStyle.paddingBottom)
+        Number.parseFloat(pageStyle.paddingTop) + Number.parseFloat(pageStyle.paddingBottom)
       const headingHeight = headingRef.current?.getBoundingClientRect().height ?? 0
       if (pageWidth <= 0 || lineHeight <= 0) return
 
@@ -274,19 +268,14 @@ export default function ReaderScreen({
 
   useEffect(() => {
     const flipBook = flipBookRef.current?.pageFlip()
-    if (
-      flipBook &&
-      readerPage < pages.length &&
-      flipBook.getCurrentPageIndex() !== readerPage
-    ) {
+    if (flipBook && readerPage < pages.length && flipBook.getCurrentPageIndex() !== readerPage) {
       flipBook.turnToPage(readerPage)
     }
   }, [readerPage, pages.length, flipSize])
 
   useEffect(() => {
-    const text = pages[readerPage]
-      ?.map((paragraph) => paragraph.text.replace(/\n/g, ' '))
-      .join(' ') ?? ''
+    const text =
+      pages[readerPage]?.map((paragraph) => paragraph.text.replace(/\n/g, ' ')).join(' ') ?? ''
     onPageTextChangeRef.current(text)
   }, [pages, readerPage])
 
@@ -323,7 +312,8 @@ export default function ReaderScreen({
           <span>{book.author}</span>
         </div>
         <button className="contents-button" onClick={() => setShowContents(true)}>
-          <Icon name="book" size={16} /><span>Contents</span>
+          <Icon name="book" size={16} />
+          <span>Contents</span>
         </button>
       </header>
       <section className="reading-area">
@@ -369,7 +359,9 @@ export default function ReaderScreen({
                   {pageIndex === 0 && (
                     <div className="chapter-heading">
                       <h1>{chapterTitles[chapterIndex]}</h1>
-                      <div className="chapter-rule"><span>✦</span></div>
+                      <div className="chapter-rule">
+                        <span>✦</span>
+                      </div>
                     </div>
                   )}
                   {page.map((paragraph, index) => (
@@ -378,7 +370,9 @@ export default function ReaderScreen({
                         'reading-text',
                         paragraph.continues ? 'is-continuation' : '',
                         paragraph.complete ? '' : 'is-split',
-                      ].filter(Boolean).join(' ')}
+                      ]
+                        .filter(Boolean)
+                        .join(' ')}
                       key={`${chapterIndex}-${pageIndex}-${index}`}
                     >
                       {paragraph.text}
@@ -395,7 +389,9 @@ export default function ReaderScreen({
           >
             <div className="chapter-heading" ref={headingRef}>
               <h1>{chapterTitles[chapterIndex]}</h1>
-              <div className="chapter-rule"><span>✦</span></div>
+              <div className="chapter-rule">
+                <span>✦</span>
+              </div>
             </div>
             <p className="reader-measure-text reading-text" ref={measurementText}>
               Measure text
@@ -404,35 +400,14 @@ export default function ReaderScreen({
           <span className="page-number">{String(readerPage + 1).padStart(2, '0')}</span>
         </div>
       </section>
-      <div className="reader-bottom">
-        <button className="audio-compact" onClick={onOpenAudio}>
-          <span className="audio-compact-top">
-            <span>
-              <small>KOKORO · WARM TONE</small>
-              <strong>Listen to this page</strong>
-            </span>
-            <span className="audio-play"><Icon name="play" size={16} /></span>
-          </span>
-          <Waveform />
-          <span className="audio-compact-meta">
-            <span>00:00</span><span>Open audio preview</span><span>--:--</span>
-          </span>
-        </button>
-        <div className="reader-progress">
-          <span style={{ width: `${progress}%` }} />
-        </div>
-        <div className="reader-controls">
-          <button className="page-arrow" aria-label="Previous page" onClick={previousPage}>
-            <Icon name="chevron-left" size={22} />
-          </button>
-          <span>
-            {chapterTitles[chapterIndex]} <i>·</i> Page {readerPage + 1} of {pages.length}
-          </span>
-          <button className="page-arrow" aria-label="Next page" onClick={nextPage}>
-            <Icon name="chevron-right" size={22} />
-          </button>
-        </div>
-      </div>
+      <ReaderBottom
+        chapterTitle={chapterTitles[chapterIndex]}
+        readerPage={readerPage}
+        pageCount={pages.length}
+        progress={progress}
+        onPreviousPage={previousPage}
+        onNextPage={nextPage}
+      />
       {showContents && (
         <div className="modal-backdrop" onClick={() => setShowContents(false)}>
           <section
@@ -465,9 +440,7 @@ export default function ReaderScreen({
                     setShowContents(false)
                   }}
                 >
-                  <span className="contents-index">
-                    {String(index + 1).padStart(2, '0')}
-                  </span>
+                  <span className="contents-index">{String(index + 1).padStart(2, '0')}</span>
                   <span>{chapter}</span>
                   <Icon name="chevron-right" size={18} />
                 </button>

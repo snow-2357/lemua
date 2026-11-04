@@ -206,9 +206,6 @@
     text-align: center;
   }
 
-  .audio-content {
-    padding-top: 25px;
-  }
 }
 
 @media (max-width: 380px) {

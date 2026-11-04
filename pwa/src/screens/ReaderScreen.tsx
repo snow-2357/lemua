@@ -1,6 +1,6 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import HTMLFlipBook from 'react-pageflip'
-import type { Book } from '../types'
+import type { Book, NarrationChunk } from '../types'
 import ReaderBottom from '../components/ReaderBottom'
 import Icon from '../components/Icon'
 import { truncateText } from '../utils/truncateText'
@@ -105,6 +105,50 @@ function paginateParagraphs(
   return pages.length > 1 && pages[pages.length - 1].length === 0 ? pages.slice(0, -1) : pages
 }
 
+function splitNarrationText(text: string): string[] {
+  const sentences = text.match(/[^.!?…]+(?:[.!?…]+["'”’)]*|$)/gu) ?? [text]
+  const chunks: string[] = []
+
+  for (const sentence of sentences) {
+    let remaining = sentence.trim()
+    while (remaining.length > 260) {
+      let splitAt = remaining.lastIndexOf(' ', 260)
+      if (splitAt < 1) splitAt = 260
+      chunks.push(remaining.slice(0, splitAt).trim())
+      remaining = remaining.slice(splitAt).trim()
+    }
+    if (remaining) chunks.push(remaining)
+  }
+  return chunks
+}
+
+function getNarrationChunks(pages: PageParagraph[][]): NarrationChunk[] {
+  const paragraphs: NarrationChunk[] = []
+  let currentParagraph: NarrationChunk | undefined
+
+  pages.forEach((page, pageIndex) => {
+    page.forEach((paragraph) => {
+      const text = paragraph.text.replace(/\s+/g, ' ').trim()
+      if (paragraph.continues && currentParagraph) {
+        currentParagraph.text = `${currentParagraph.text} ${text}`
+      } else {
+        if (currentParagraph) paragraphs.push(currentParagraph)
+        currentParagraph = { text, pageIndex }
+      }
+
+      if (paragraph.complete && currentParagraph) {
+        paragraphs.push(currentParagraph)
+        currentParagraph = undefined
+      }
+    })
+  })
+
+  if (currentParagraph) paragraphs.push(currentParagraph)
+  return paragraphs.flatMap(({ text, pageIndex }) =>
+    splitNarrationText(text).map((chunkText) => ({ text: chunkText, pageIndex })),
+  )
+}
+
 type Props = {
   book: Book
   chapterTitles: string[]
@@ -113,7 +157,6 @@ type Props = {
   chapterPageCounts: Record<number, number>
   readerPage: number
   onPageCountChange: (count: number) => void
-  onPageTextChange: (text: string) => void
   progress: number
   onBack: () => void
   onChangeChapter: (index: number, page?: number) => void
@@ -128,7 +171,6 @@ export default function ReaderScreen({
   chapterPageCounts,
   readerPage,
   onPageCountChange,
-  onPageTextChange,
   progress,
   onBack,
   onChangeChapter,
@@ -149,7 +191,6 @@ export default function ReaderScreen({
   const flipBookRef = useRef<PageFlipHandle>(null)
   const onChangePageRef = useRef(onChangePage)
   const onPageCountChangeRef = useRef(onPageCountChange)
-  const onPageTextChangeRef = useRef(onPageTextChange)
   const readerPageRef = useRef(readerPage)
   const chapterIndexRef = useRef(chapterIndex)
   const flipBookRevisionRef = useRef(flipBookRevision)
@@ -158,6 +199,7 @@ export default function ReaderScreen({
     () => (paginatedChapter?.index === chapterIndex ? paginatedChapter.pages : []),
     [chapterIndex, paginatedChapter],
   )
+  const narrationChunks = useMemo(() => getNarrationChunks(pages), [pages])
 
   useEffect(() => {
     const motionPreference = window.matchMedia('(prefers-reduced-motion: reduce)')
@@ -175,10 +217,6 @@ export default function ReaderScreen({
   useEffect(() => {
     onPageCountChangeRef.current = onPageCountChange
   }, [onPageCountChange])
-
-  useEffect(() => {
-    onPageTextChangeRef.current = onPageTextChange
-  }, [onPageTextChange])
 
   useLayoutEffect(() => {
     readerPageRef.current = readerPage
@@ -272,12 +310,6 @@ export default function ReaderScreen({
       flipBook.turnToPage(readerPage)
     }
   }, [readerPage, pages.length, flipSize])
-
-  useEffect(() => {
-    const text =
-      pages[readerPage]?.map((paragraph) => paragraph.text.replace(/\n/g, ' ')).join(' ') ?? ''
-    onPageTextChangeRef.current(text)
-  }, [pages, readerPage])
 
   const previousPage = () => {
     if (readerPage > 0) {
@@ -401,10 +433,15 @@ export default function ReaderScreen({
         </div>
       </section>
       <ReaderBottom
+        key={`${book.id}:${chapterIndex}`}
+        bookId={book.id}
+        chapterIndex={chapterIndex}
         chapterTitle={chapterTitles[chapterIndex]}
         readerPage={readerPage}
         pageCount={pages.length}
+        chunks={narrationChunks}
         progress={progress}
+        onChangePage={onChangePage}
         onPreviousPage={previousPage}
         onNextPage={nextPage}
       />

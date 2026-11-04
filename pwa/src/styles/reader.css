@@ -237,6 +237,16 @@
   width: 32px;
 }
 
+.audio-play:disabled {
+  cursor: wait;
+  opacity: 0.65;
+}
+
+.pause-glyph {
+  font-size: 15px;
+  font-weight: 700;
+}
+
 .waveform {
   align-items: center;
   display: flex;

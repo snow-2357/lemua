@@ -33,6 +33,8 @@ type ScheduledPassage = {
   stop: () => void
 }
 
+export const pausedNarrationWordLimit = 1000
+
 export const initialNarrationSnapshot: NarrationSnapshot = {
   state: 'idle',
   message: 'Listen from this page · you can keep reading',
@@ -79,6 +81,10 @@ export class NarrationPlayer {
   private pumping = false
   private keys: string[] = []
   private nextIndex = 0
+  private preparedIndex = 0
+  private pausedBaseIndex = 0
+  private pausedTargetIndex = 0
+  private pausedGenerationAbort: AbortController | undefined
   private completedSeconds = 0
   private decodedSeconds = 0
   private lookaheadSeconds = 24
@@ -111,6 +117,7 @@ export class NarrationPlayer {
     this.active = true
     this.wanted = true
     this.nextIndex = index
+    this.preparedIndex = index
     this.snapshot.index = index
     this.publish('loading', 'Preparing narration · keep reading while it loads')
     try {
@@ -133,18 +140,31 @@ export class NarrationPlayer {
 
   pause(): void {
     if (!this.active || !this.output) return
+    if (!this.wanted) return
+    const now = this.output.currentTime
+    this.pausedBaseIndex = this.scheduled.find((passage) => passage.end > now)?.index ?? this.nextIndex
+    this.pausedTargetIndex = this.pausedBaseIndex
+    while (
+      this.pausedTargetIndex < this.texts.length &&
+      this.remainingWords[this.pausedBaseIndex] - this.remainingWords[this.pausedTargetIndex] < pausedNarrationWordLimit
+    ) {
+      this.pausedTargetIndex += 1
+    }
     this.wanted = false
     if (this.timer) clearInterval(this.timer)
     this.timer = undefined
-    this.publish('paused', 'Paused · resume whenever you are ready')
+    this.publishPaused()
     void this.output.suspend().catch((error: unknown) => {
       if (this.active) this.fail(error)
     })
+    void this.pump()
   }
 
   async resume(): Promise<void> {
     if (!this.active || !this.output) return
     this.wanted = true
+    // Let cached playback resume immediately instead of waiting for a distant prefetch.
+    this.pausedGenerationAbort?.abort()
     try {
       await this.output.resume()
       if (!this.active || !this.wanted) return
@@ -159,6 +179,7 @@ export class NarrationPlayer {
     this.active = false
     this.wanted = false
     this.abort.abort()
+    this.pausedGenerationAbort?.abort()
     if (this.timer) clearInterval(this.timer)
     this.timer = undefined
     this.scheduled.forEach((passage) => passage.stop())
@@ -197,6 +218,17 @@ export class NarrationPlayer {
     this.publish('error', 'Narration stopped · tap play to retry')
   }
 
+  private publishPaused() {
+    const savedWords = this.remainingWords[this.pausedBaseIndex] -
+      this.remainingWords[Math.max(this.pausedBaseIndex, this.preparedIndex)]
+    this.publish(
+      'paused',
+      this.preparedIndex < this.pausedTargetIndex
+        ? `Paused · saving up to ~${pausedNarrationWordLimit} words ahead (${savedWords} ready)`
+        : `Paused · ${savedWords} words saved ahead${this.preparedIndex === this.texts.length ? ' · chapter end' : ''}`,
+    )
+  }
+
   private tick() {
     const output = this.output
     if (!this.active || !output || !this.wanted) return
@@ -226,12 +258,34 @@ export class NarrationPlayer {
   }
 
   private async pump(): Promise<void> {
-    if (this.pumping || !this.active || !this.wanted || this.keys.length === 0) return
+    if (this.pumping || !this.active || this.keys.length === 0) return
     const output = this.output
     if (!output) return
     this.pumping = true
     try {
-      while (this.active && this.wanted && this.nextIndex < this.texts.length) {
+      while (this.active) {
+        if (!this.wanted) {
+          if (this.preparedIndex >= this.pausedTargetIndex) {
+            this.publishPaused()
+            break
+          }
+          const index = this.preparedIndex
+          const abort = new AbortController()
+          this.pausedGenerationAbort = abort
+          try {
+            // Generation persists the WAV; do not retain or decode this larger disk buffer.
+            await this.dependencies.generate(this.keys[index], this.texts[index], abort.signal, () => {})
+            if (!this.active) return
+            if (!abort.signal.aborted) this.preparedIndex = index + 1
+          } catch (error) {
+            if (!abort.signal.aborted) throw error
+          } finally {
+            this.pausedGenerationAbort = undefined
+          }
+          if (this.active && !this.wanted) this.publishPaused()
+          continue
+        }
+        if (this.nextIndex >= this.texts.length) break
         const tail = this.scheduled.at(-1)
         if (this.scheduled.length >= 4 ||
           (tail && tail.end - output.currentTime >= this.lookaheadSeconds)) break
@@ -246,6 +300,7 @@ export class NarrationPlayer {
           },
         )
         if (!this.active) return
+        this.preparedIndex = Math.max(this.preparedIndex, index + 1)
         const decoded = await output.decode(audio)
         if (!this.active) return
         if (!Number.isFinite(decoded.duration) || decoded.duration <= 0) {

@@ -1,5 +1,5 @@
 import { createNarrationChunks, findNarrationStart } from '../src/utils/narrationText'
-import { initialNarrationSnapshot, NarrationPlayer } from '../src/services/narrationPlayer'
+import { initialNarrationSnapshot, NarrationPlayer, pausedNarrationWordLimit } from '../src/services/narrationPlayer'
 import { getOrGenerateNarrationChunk, prepareNarrationSequence } from '../src/services/kokoroTts'
 import { deferred, FakeOutput, silentWav, until } from './narration.fixtures'
 
@@ -89,12 +89,136 @@ const tests: [string, () => Promise<void>][] = [
       equal(snapshot.state, 'paused')
       pending.resolve(silentWav())
       await until(() => output.sources.length === 1)
+      await until(() => snapshot.message.includes('chapter end'))
       equal(snapshot.state, 'paused')
       equal(output.resumes, 1)
       await player.resume()
       equal(output.resumes, 2)
       await until(() => output.sources.length === 2)
     } finally { player.stop() }
+  }],
+  ['Pause saves ~1000 words from the listening position without decoding the disk lookahead', async () => {
+    const output = new FakeOutput()
+    const first = deferred<Blob>()
+    const wordsPerPassage = 73
+    const texts = Array.from({ length: 40 }, (_, index) =>
+      [`Passage${index}`, ...Array.from({ length: wordsPerPassage - 1 }, () => 'word')].join(' '))
+    const saved = new Map<string, Blob>()
+    const generated: number[] = []
+    let snapshot = initialNarrationSnapshot
+    const followed: number[] = []
+    const player = new NarrationPlayer(texts, {
+      createOutput: () => output,
+      prepare: async (passages) => ({ chunkKeys: passages }),
+      generate: async (key, text) => {
+        const cached = saved.get(key)
+        if (cached) return cached
+        const index = texts.indexOf(text)
+        generated.push(index)
+        const audio = index === 5 ? await first.promise : silentWav()
+        saved.set(key, audio)
+        return audio
+      },
+    }, (next) => { snapshot = next }, (index) => followed.push(index))
+    try {
+      await player.start(5)
+      player.pause()
+      first.resolve(silentWav())
+      await until(() => snapshot.message.includes('words saved ahead'))
+      const expectedPassages = Math.ceil(pausedNarrationWordLimit / wordsPerPassage)
+      equal(generated, Array.from({ length: expectedPassages }, (_, index) => index + 5))
+      const preparedWords = saved.size * wordsPerPassage
+      assert(preparedWords >= 1000 && preparedWords < 1000 + wordsPerPassage, 'Wrong paused word window')
+      assert(output.sources.length <= 4, 'Disk lookahead was decoded into memory')
+      equal(snapshot.state, 'paused')
+      equal(output.resumes, 1)
+      equal(followed, [])
+      player.pause()
+      await new Promise((resolve) => setTimeout(resolve, 30))
+      equal(saved.size, expectedPassages)
+      await player.resume()
+      await until(() => output.sources.length === 4)
+      equal(generated.length, expectedPassages)
+      equal(output.resumes, 2)
+      output.advanceTo(4.1)
+      await until(() => output.sources.length === 6)
+      player.pause()
+      await until(() => generated.length === expectedPassages + 2 && snapshot.message.includes('words saved ahead'))
+      equal(generated.slice(-2), [5 + expectedPassages, 6 + expectedPassages])
+      assert(output.sources.filter((source) => !source.finished && !source.stopped).length <= 4,
+        'Rolling paused lookahead exceeded the decoded memory limit')
+    } finally { player.stop() }
+  }],
+  ['Pause before setup completes still prepares ahead; resume bypasses a distant pending generation', async () => {
+    const output = new FakeOutput()
+    const prepare = deferred<{ chunkKeys: string[] }>()
+    const texts = Array.from({ length: 20 }, (_, index) => `${index} ${'word '.repeat(99)}`.trim())
+    const saved = new Map<string, Blob>()
+    let prepareStarted = false
+    let distantSignal: AbortSignal | undefined
+    let snapshot = initialNarrationSnapshot
+    const player = new NarrationPlayer(texts, {
+      createOutput: () => output,
+      prepare: () => { prepareStarted = true; return prepare.promise },
+      generate: async (key, _text, signal) => {
+        const cached = saved.get(key)
+        if (cached) return cached
+        if (saved.size === 5) {
+          distantSignal = signal
+          return new Promise<Blob>((_resolve, reject) => {
+            signal.addEventListener('abort', () => reject(signal.reason), { once: true })
+          })
+        }
+        const audio = silentWav()
+        saved.set(key, audio)
+        return audio
+      },
+    }, (next) => { snapshot = next }, () => {})
+    try {
+      const starting = player.start(0)
+      await until(() => prepareStarted)
+      player.pause()
+      prepare.resolve({ chunkKeys: texts })
+      await starting
+      await until(() => distantSignal !== undefined)
+      equal(saved.size, 5)
+      equal(output.sources.length, 0)
+      equal(snapshot.state, 'paused')
+      await player.resume()
+      await until(() => output.sources.length === 4)
+      assert(distantSignal?.aborted, 'Distant generation blocked cached playback')
+      equal(saved.size, 5)
+      equal(snapshot.state, 'playing')
+    } finally { player.stop() }
+  }],
+  ['Stop cancels paused prefetch and late results cannot continue generating', async () => {
+    const output = new FakeOutput()
+    const pending = deferred<Blob>()
+    let calls = 0
+    let pausedSignal: AbortSignal | undefined
+    let updates = 0
+    const player = new NarrationPlayer(Array.from({ length: 20 }, () => 'word '.repeat(100)), {
+      createOutput: () => output,
+      prepare: async (texts) => ({ chunkKeys: texts }),
+      generate: (_key, _text, signal) => {
+        calls += 1
+        if (calls <= 4) return Promise.resolve(silentWav())
+        pausedSignal = signal
+        return pending.promise
+      },
+    }, () => { updates += 1 }, () => {})
+    await player.start(0)
+    await until(() => output.sources.length === 4)
+    player.pause()
+    await until(() => pausedSignal !== undefined)
+    player.stop()
+    assert(pausedSignal?.aborted, 'Stop did not cancel paused prefetch')
+    const stoppedUpdates = updates
+    pending.resolve(silentWav())
+    await new Promise((resolve) => setTimeout(resolve, 30))
+    equal(calls, 5)
+    equal(updates, stoppedUpdates)
+    assert(output.closed, 'Stopped audio output stayed open')
   }],
   ['Stop aborts pending generation and cannot resurrect playback or update the UI', async () => {
     const output = new FakeOutput()

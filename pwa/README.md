@@ -63,6 +63,12 @@ phonemization. Speech is generated when playback starts and is not uploaded.
 First-use download/model startup and devices that cannot synthesize faster than
 playback can still cause waiting; the card reports loading/buffering without
 covering or disabling the reader. Pause and stop remain available during loading.
+Pausing stops playback but continues saving approximately the next 1,000 words
+from the paused passage (or to chapter end). The final passage is completed rather
+than split mid-sentence, so the word count can slightly exceed 1,000. This larger
+lookahead is stored as WAVs in IndexedDB, not decoded into memory; the four-passage
+playback limit still applies. Resuming prioritizes cached playback over a distant
+prefetch, and repeated pauses at the same position do not extend the word window.
 Stopping, leaving the reader, or changing chapter cancels obsolete queued work;
 an inference already executing may finish before the worker handles cancellation.
 Page following is opt-in through **Follow text**. Manual page buttons turn it off,

@@ -83,6 +83,14 @@ Highlighting uses text ranges, so page layout, selection, audio cache keys, and
 the 1,000-word paused prefetch are unchanged. Browsers without the API show the
 highlight control as unavailable; reading and narration still work.
 
+## TODO
+
+- [ ] Add accurate spoken-line highlighting using word-level audio timestamps or
+  alignment, mapping the spoken word to its displayed line after pagination or
+  resizing. Verify synchronization and on-device performance while preserving
+  natural narration, audio caching, and background prefetch; do not use guessed
+  line timings.
+
 ## Checks
 
 ```sh

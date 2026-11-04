@@ -69,6 +69,43 @@ export default function ReaderBottom({
   const active = busy || snapshot.state === 'playing' || snapshot.state === 'paused'
   const canPause = busy || snapshot.state === 'playing'
 
+  useEffect(() => {
+    if (active || chunks.length === 0) return
+
+    let cancelled = false
+    const signal = new AbortController().signal
+    const startIndex = findNarrationStart(chunks, readerPage)
+
+    void import('../services/kokoroTts').then(async ({
+      getOrGenerateNarrationChunk,
+      prepareNarrationSequence,
+    }) => {
+      const { chunkKeys } = await prepareNarrationSequence(
+        bookId,
+        chapterIndex,
+        chunks.map((chunk) => chunk.text),
+        1,
+      )
+      const endIndex = Math.min(startIndex + 5, chunks.length)
+      for (let index = startIndex; index < endIndex; index += 1) {
+        if (cancelled) return
+        await getOrGenerateNarrationChunk(
+          chunkKeys[index],
+          chunks[index].text,
+          1,
+          () => {},
+          signal,
+        )
+      }
+    }).catch((error: unknown) => {
+      if (!cancelled) console.warn('Could not pre-generate upcoming narration.', error)
+    })
+
+    return () => {
+      cancelled = true
+    }
+  }, [active, bookId, chapterIndex, chunks, readerPage])
+
   const togglePlayback = () => {
     if (canPause) {
       playerRef.current?.pause()

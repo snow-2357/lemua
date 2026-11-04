@@ -63,10 +63,17 @@ required for the initial download; browser storage can still be cleared or
 evicted by the browser.
 
 The PWA currently uses the bundled `tone_warm` voice with English (US)
-phonemization. Speech is generated when playback starts and is not uploaded.
+phonemization. When a chapter opens, it starts generating and caching the current
+passage and up to four following passages in the background. Speech is not uploaded.
 First-use download/model startup and devices that cannot synthesize faster than
 playback can still cause waiting; the card reports loading/buffering without
 covering or disabling the reader. Pause and stop remain available during loading.
+The opening passage is about 40 words; later passages grow to at most 60 words.
+Playback waits for at least five seconds of decoded audio and adapts that startup
+lead to 1.5 times the measured generation time, capped by the four-passage memory
+limit. The worker keeps generating while scheduled audio plays. This reserve helps
+smooth handoffs, but cannot eliminate pauses when inference is consistently slower
+than playback.
 Pausing stops playback but continues saving approximately the next 1,000 words
 from the paused passage (or to chapter end). The final passage is completed rather
 than split mid-sentence, so the word count can slightly exceed 1,000. This larger

@@ -34,7 +34,13 @@ type ScheduledPassage = {
   stop: () => void
 }
 
+type ReadyPassage = {
+  index: number
+  audio: AudioBuffer
+}
+
 export const pausedNarrationWordLimit = 1000
+const startupBufferSeconds = 5
 
 export const initialNarrationSnapshot: NarrationSnapshot = {
   state: 'idle',
@@ -81,6 +87,8 @@ export class NarrationPlayer {
   private active = false
   private wanted = false
   private pumping = false
+  private startedPlayback = false
+  private ready: ReadyPassage[] = []
   private keys: string[] = []
   private nextIndex = 0
   private preparedIndex = 0
@@ -90,6 +98,7 @@ export class NarrationPlayer {
   private completedSeconds = 0
   private decodedSeconds = 0
   private lookaheadSeconds = 24
+  private startupBufferTargetSeconds = startupBufferSeconds
   private remainingWords: number[]
   private generatedWords = 0
   private snapshot = { ...initialNarrationSnapshot }
@@ -120,6 +129,9 @@ export class NarrationPlayer {
     this.wanted = true
     this.nextIndex = index
     this.preparedIndex = index
+    this.startedPlayback = false
+    this.ready = []
+    this.startupBufferTargetSeconds = startupBufferSeconds
     this.snapshot.index = index
     this.publish('loading', 'Preparing narration · keep reading while it loads')
     try {
@@ -144,7 +156,8 @@ export class NarrationPlayer {
     if (!this.active || !this.output) return
     if (!this.wanted) return
     const now = this.output.currentTime
-    this.pausedBaseIndex = this.scheduled.find((passage) => passage.end > now)?.index ?? this.nextIndex
+    this.pausedBaseIndex = this.scheduled.find((passage) => passage.end > now)?.index ??
+      this.ready[0]?.index ?? this.nextIndex
     this.pausedTargetIndex = this.pausedBaseIndex
     while (
       this.pausedTargetIndex < this.texts.length &&
@@ -186,6 +199,7 @@ export class NarrationPlayer {
     this.timer = undefined
     this.scheduled.forEach((passage) => passage.stop())
     this.scheduled = []
+    this.ready = []
     const output = this.output
     this.output = undefined
     if (output) {
@@ -211,9 +225,35 @@ export class NarrationPlayer {
       duration: Math.max(currentTime, this.decodedSeconds + this.remainingWords[this.nextIndex] * secondsPerWord),
       bufferedSeconds: this.scheduled.reduce(
         (seconds, passage) => seconds + Math.max(0, passage.end - Math.max(now, passage.start)), 0,
-      ),
+      ) + this.ready.reduce((seconds, passage) => seconds + passage.audio.duration, 0),
     }
     this.update(this.snapshot)
+  }
+
+  private scheduleReady(): void {
+    const output = this.output
+    if (!this.active || !this.wanted || !output) return
+
+    const readySeconds = this.ready.reduce((total, passage) => total + passage.audio.duration, 0)
+    if (!this.startedPlayback && readySeconds < this.startupBufferTargetSeconds &&
+      this.nextIndex < this.texts.length && this.ready.length < 4) {
+      return
+    }
+    this.startedPlayback = true
+
+    while (this.ready.length > 0 && this.scheduled.length < 4) {
+      const passage = this.ready.shift()
+      if (!passage) break
+      const start = Math.max(output.currentTime + 0.04, this.scheduled.at(-1)?.end ?? 0)
+      const stop = output.schedule(passage.audio, start, () => this.tick())
+      this.scheduled.push({
+        index: passage.index,
+        start,
+        end: start + passage.audio.duration,
+        duration: passage.audio.duration,
+        stop,
+      })
+    }
   }
 
   private fail(error: unknown) {
@@ -246,7 +286,7 @@ export class NarrationPlayer {
       this.snapshot.index = current.index
       this.passageChanged(current.index)
     }
-    if (!current && this.nextIndex === this.texts.length && !this.pumping) {
+    if (!current && this.nextIndex === this.texts.length && this.ready.length === 0 && !this.pumping) {
       this.publish('finished', 'Chapter finished · tap play to listen again')
       this.stop()
       return
@@ -290,9 +330,10 @@ export class NarrationPlayer {
           if (this.active && !this.wanted) this.publishPaused()
           continue
         }
+        this.scheduleReady()
         if (this.nextIndex >= this.texts.length) break
         const tail = this.scheduled.at(-1)
-        if (this.scheduled.length >= 4 ||
+        if (this.scheduled.length + this.ready.length >= 4 ||
           (tail && tail.end - output.currentTime >= this.lookaheadSeconds)) break
         const index = this.nextIndex
         const startedAt = performance.now()
@@ -312,13 +353,16 @@ export class NarrationPlayer {
           throw new Error('The generated narration contains no playable audio.')
         }
         const generationSeconds = (performance.now() - startedAt) / 1000
+        this.startupBufferTargetSeconds = Math.max(
+          startupBufferSeconds,
+          generationSeconds * 1.5,
+        )
         this.lookaheadSeconds = Math.max(20, Math.min(60, generationSeconds * 3 + 12))
-        const start = Math.max(output.currentTime + 0.04, this.scheduled.at(-1)?.end ?? 0)
-        const stop = output.schedule(decoded, start, () => this.tick())
-        this.scheduled.push({ index, start, end: start + decoded.duration, duration: decoded.duration, stop })
+        this.ready.push({ index, audio: decoded })
         this.decodedSeconds += decoded.duration
         this.generatedWords += this.remainingWords[index] - this.remainingWords[index + 1]
         this.nextIndex += 1
+        this.scheduleReady()
         if (this.wanted) this.tick()
       }
     } catch (error) {

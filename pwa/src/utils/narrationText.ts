@@ -59,15 +59,25 @@ export function createNarrationChunks(
       let remaining = sentence.segment.trim()
       let offset = sentence.index + sentence.segment.length - sentence.segment.trimStart().length
       while (remaining) {
-        const limit = passages.length === 0 ? 240 : 480
-        let length = Math.min(remaining.length, limit)
-        if (length < remaining.length) {
+        const targetWords = Math.min(60, 40 + passages.length * 10)
+        const maxCharacters = targetWords * 8
+        const words = Array.from(remaining.matchAll(/\S+/g))
+        const wordEnd = words.length > targetWords
+          ? (words[targetWords - 1].index ?? 0) + words[targetWords - 1][0].length
+          : remaining.length
+        let length = Math.min(wordEnd, maxCharacters)
+        if (length < remaining.length && remaining[length] !== ' ') {
           const space = remaining.lastIndexOf(' ', length)
           if (space > 0) length = space
         }
         const part = remaining.slice(0, length)
+        const partWordCount = part.trim().split(/\s+/).filter(Boolean).length
         const separator = lastParagraphIndex === paragraphIndex ? ' ' : '\n\n'
-        if (current && current.text.length + separator.length + part.length > limit) {
+        const currentWordCount = current?.text.trim().split(/\s+/).filter(Boolean).length ?? 0
+        if (current && (
+          currentWordCount + partWordCount > targetWords ||
+          current.text.length + separator.length + part.length > maxCharacters
+        )) {
           passages.push(current)
           current = undefined
           continue
@@ -84,7 +94,7 @@ export function createNarrationChunks(
         const consumed = remaining.length - remaining.slice(length).trimStart().length
         remaining = remaining.slice(length).trimStart()
         offset += consumed
-        if (current.text.length >= (passages.length === 0 ? 160 : 320)) {
+        if (currentWordCount + partWordCount >= targetWords) {
           passages.push(current)
           current = undefined
         }

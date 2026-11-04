@@ -17,10 +17,18 @@ type PendingRequest = {
   cleanup: () => void
 }
 
+type InFlightChunk = {
+  controller: AbortController
+  promise: Promise<Blob>
+  consumers: Set<symbol>
+  progressListeners: Map<symbol, (message: string) => void>
+}
+
 let narrationDatabasePromise: Promise<IDBDatabase> | undefined
 let generationWorker: Worker | undefined
 let nextRequestId = 0
 const pendingRequests = new Map<number, PendingRequest>()
+const inFlightChunks = new Map<string, InFlightChunk>()
 let preloadPromise: Promise<void> | undefined
 
 function openNarrationDatabase(): Promise<IDBDatabase> {
@@ -216,6 +224,64 @@ export async function getOrGenerateNarrationChunk(
   signal.throwIfAborted()
   // Cached playback must never wait behind inference jobs in the worker.
   if (cached instanceof Blob) return cached
-  return requestChunk(key, text, speed, onProgress, signal)
+
+  let pending = inFlightChunks.get(key)
+  if (!pending) {
+    const controller = new AbortController()
+    const created: InFlightChunk = {
+      controller,
+      promise: Promise.resolve(new Blob()),
+      consumers: new Set(),
+      progressListeners: new Map(),
+    }
+    created.promise = requestChunk(
+      key,
+      text,
+      speed,
+      (message) => created.progressListeners.forEach((listener) => listener(message)),
+      controller.signal,
+    )
+    pending = created
+    inFlightChunks.set(key, pending)
+    void created.promise.then(
+      () => { if (inFlightChunks.get(key) === created) inFlightChunks.delete(key) },
+      () => { if (inFlightChunks.get(key) === created) inFlightChunks.delete(key) },
+    )
+  }
+
+  const consumer = Symbol(key)
+  pending.consumers.add(consumer)
+  pending.progressListeners.set(consumer, onProgress)
+  return new Promise<Blob>((resolve, reject) => {
+    let settled = false
+    const release = () => {
+      if (settled) return false
+      settled = true
+      signal.removeEventListener('abort', abort)
+      pending?.consumers.delete(consumer)
+      pending?.progressListeners.delete(consumer)
+      if (pending?.consumers.size === 0 && inFlightChunks.get(key) === pending) {
+        inFlightChunks.delete(key)
+        pending.controller.abort()
+      }
+      return true
+    }
+    const abort = () => {
+      const error = signal.reason instanceof Error
+        ? signal.reason
+        : new DOMException('The operation was aborted.', 'AbortError')
+      if (release()) reject(error)
+    }
+
+    if (signal.aborted) {
+      abort()
+      return
+    }
+    signal.addEventListener('abort', abort, { once: true })
+    pending?.promise.then(
+      (audio) => { if (release()) resolve(audio) },
+      (error: unknown) => { if (release()) reject(error) },
+    )
+  })
 }
 import type { NarrationWorkerRequest, NarrationWorkerResponse } from './narrationWorkerTypes'

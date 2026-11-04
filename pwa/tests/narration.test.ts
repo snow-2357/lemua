@@ -2,6 +2,7 @@ import { createNarrationChunks, findNarrationStart, indexNarrationPages } from '
 import { getNarrationHighlightOffsets } from '../src/utils/narrationHighlight'
 import { initialNarrationSnapshot, NarrationPlayer, pausedNarrationWordLimit } from '../src/services/narrationPlayer'
 import { getOrGenerateNarrationChunk, prepareNarrationSequence } from '../src/services/kokoroTts'
+import type { NarrationWorkerRequest, NarrationWorkerResponse } from '../src/services/narrationWorkerTypes'
 import { deferred, FakeOutput, silentWav, until } from './narration.fixtures'
 
 function assert(condition: unknown, message: string): asserts condition {
@@ -66,10 +67,13 @@ const tests: [string, () => Promise<void>][] = [
     const chunks = createNarrationChunks(paragraphs, [])
     equal(normalize(chunks.map(({ text }) => text).join(' ')).replace(/ /g, ''),
       normalize(paragraphs.join(' ')).replace(/ /g, ''))
-    assert(chunks[0].text.length <= 240, 'Opening passage should be quick to generate')
+    assert(chunks[0].text.split(/\s+/).length <= 40, 'Opening passage exceeds 40 words')
+    assert(chunks.slice(1).every(({ text }) => text.split(/\s+/).length <= 60),
+      'Passages exceed the 60-word cap')
     assert(chunks.slice(1).every(({ text }) => text.length <= 480), 'Passages exceed inference budget')
     assert(chunks[0].text.includes('Sentence 2'), 'Still generating one-line clips')
-    assert(chunks.slice(1, 3).every(({ text }) => text.length >= 300), 'Subsequent passages should be fuller')
+    const ramp = createNarrationChunks(['word. '.repeat(200)], [])
+    equal(ramp.slice(0, 4).map(({ text }) => text.trim().split(/\s+/).length), [40, 50, 60, 60])
   }],
   ['Narration text/cache boundaries remain stable when pagination changes', async () => {
     const text = 'A sentence with several words. '.repeat(40).trim()
@@ -195,6 +199,49 @@ const tests: [string, () => Promise<void>][] = [
       assert(states.includes('playing'), 'Playback did not begin')
     } finally { player.stop() }
   }],
+  ['Playback waits for a five-second startup buffer before scheduling audio', async () => {
+    const output = new FakeOutput()
+    const second = deferred<Blob>()
+    let calls = 0
+    const player = new NarrationPlayer(Array.from({ length: 10 }, (_, index) => `Passage ${index}`), {
+      createOutput: () => output,
+      prepare: async (texts) => ({ chunkKeys: texts }),
+      generate: async () => ++calls === 2 ? second.promise : silentWav(),
+    }, () => {}, () => {})
+    try {
+      await player.start(0)
+      await until(() => calls === 2)
+      equal(output.sources.length, 0)
+      second.resolve(silentWav())
+      await until(() => output.sources.length >= 3)
+      output.sources.slice(1).forEach((source, index) =>
+        equal(source.start, output.sources[index].end))
+    } finally { player.stop() }
+  }],
+  ['Next passage generates while scheduled audio is playing', async () => {
+    const output = new FakeOutput()
+    const nextPassage = deferred<Blob>()
+    let calls = 0
+    let snapshot = initialNarrationSnapshot
+    const player = new NarrationPlayer(Array.from({ length: 10 }, (_, index) => `Passage ${index}`), {
+      createOutput: () => output,
+      prepare: async (texts) => ({ chunkKeys: texts }),
+      generate: async () => {
+        calls += 1
+        return calls === 4 ? nextPassage.promise : silentWav()
+      },
+    }, (next) => { snapshot = next }, () => {})
+    try {
+      await player.start(0)
+      await until(() => calls === 4 && output.sources.length === 3)
+      output.advanceTo(0.1)
+      await until(() => snapshot.state === 'playing')
+      equal(calls, 4)
+      equal(output.sources.length, 3)
+      nextPassage.resolve(silentWav())
+      await until(() => output.sources.length === 4)
+    } finally { player.stop() }
+  }],
   ['Audible highlight follows the audio clock, holds on pause, and ignores prefetched passages', async () => {
     const output = new FakeOutput()
     let snapshot = initialNarrationSnapshot
@@ -234,8 +281,8 @@ const tests: [string, () => Promise<void>][] = [
       player.pause()
       equal(snapshot.state, 'paused')
       pending.resolve(silentWav())
-      await until(() => output.sources.length === 1)
       await until(() => snapshot.message.includes('chapter end'))
+      equal(output.sources.length, 0)
       equal(snapshot.state, 'paused')
       equal(output.resumes, 1)
       await player.resume()
@@ -442,6 +489,46 @@ const tests: [string, () => Promise<void>][] = [
       output.advanceTo(4.1)
       equal(followed, [1, 2])
     } finally { player.stop() }
+  }],
+  ['Playback shares a passage already being prefetched', async () => {
+    const nativeWorker = globalThis.Worker
+    const requests: Extract<NarrationWorkerRequest, { type: 'generate' }>[] = []
+    let cancellations = 0
+    let worker: {
+      onmessage: ((event: MessageEvent<NarrationWorkerResponse>) => void) | null
+    } | undefined
+    class SharedWorker {
+      onmessage: ((event: MessageEvent<NarrationWorkerResponse>) => void) | null = null
+      constructor() { worker = this }
+      postMessage(request: NarrationWorkerRequest) {
+        if (request.type === 'cancel') cancellations += 1
+        else if (request.type === 'generate') requests.push(request)
+      }
+      terminate() {}
+    }
+    const key = `shared-prefetch-${crypto.randomUUID()}`
+    const firstSignal = new AbortController()
+    const playbackSignal = new AbortController()
+    try {
+      Object.defineProperty(globalThis, 'Worker', { configurable: true, value: SharedWorker })
+      const prefetch = getOrGenerateNarrationChunk(key, 'Shared passage', 1, () => {}, firstSignal.signal)
+      const playback = getOrGenerateNarrationChunk(key, 'Shared passage', 1, () => {}, playbackSignal.signal)
+      await until(() => requests.length === 1)
+      firstSignal.abort()
+      let prefetchCancelled = false
+      try { await prefetch }
+      catch (error) { prefetchCancelled = error instanceof DOMException && error.name === 'AbortError' }
+      assert(prefetchCancelled, 'Cancelled prefetch caller did not stop waiting')
+      equal(cancellations, 0)
+      const audio = silentWav()
+      worker?.onmessage?.(new MessageEvent('message', {
+        data: { id: requests[0].id, type: 'result', audio },
+      }))
+      assert(await playback === audio, 'Playback did not receive the shared generated audio')
+      equal(requests.length, 1)
+    } finally {
+      Object.defineProperty(globalThis, 'Worker', { configurable: true, value: nativeWorker })
+    }
   }],
   ['Audio keys reuse identical text across chapters; cached playback never starts a worker', async () => {
     const bookId = `narration-regression-${crypto.randomUUID()}`

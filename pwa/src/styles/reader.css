@@ -159,6 +159,16 @@
   margin-bottom: 0;
 }
 
+::highlight(lemua-narration) {
+  background-color: #dce5c8;
+  color: #263022;
+}
+
+.theme-dark ::highlight(lemua-narration) {
+  background-color: #4a5038;
+  color: #fff3d6;
+}
+
 .reader-measure-text {
   left: -10000px;
   position: absolute;
@@ -294,6 +304,11 @@
 .audio-follow[aria-pressed='true'] {
   border-color: var(--accent);
   color: var(--accent);
+}
+
+.audio-follow:disabled {
+  cursor: not-allowed;
+  opacity: 0.65;
 }
 
 .audio-loading-note {

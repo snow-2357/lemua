@@ -1,12 +1,53 @@
 import type { NarrationChunk } from '../types'
 
 type PageParagraph = { text: string; continues: boolean; complete: boolean }
-type Passage = { text: string; paragraphIndex: number; offset: number }
+export type NarrationSourceRange = { paragraphIndex: number; start: number; end: number }
+export type NarrationPageFragment = { paragraphIndex: number; sourceOffsets: number[] }
+type Passage = {
+  text: string
+  paragraphIndex: number
+  offset: number
+  sourceRanges: NarrationSourceRange[]
+}
+
+export function indexNarrationPages(
+  paragraphs: string[],
+  pages: PageParagraph[][],
+): NarrationPageFragment[][] {
+  const sources = paragraphs.map((text) => text.replace(/\s+/g, ' ').trim())
+  let paragraphIndex = 0
+  let offset = 0
+  return pages.map((page) => page.map((paragraph) => {
+    while (paragraphIndex < sources.length && !sources[paragraphIndex]) paragraphIndex += 1
+    const source = sources[paragraphIndex] ?? ''
+    if (source[offset] === ' ') offset += 1
+    const sourceOffsets = [offset]
+    for (const character of paragraph.text) {
+      if (/\s/.test(character)) {
+        // A wrapped newline either replaces a space or splits an overlong word.
+        if (source[offset] === ' ') offset += 1
+        sourceOffsets.push(offset)
+      } else {
+        for (let unit = 0; unit < character.length; unit += 1) {
+          offset += 1
+          sourceOffsets.push(offset)
+        }
+      }
+    }
+    const fragment = { paragraphIndex, sourceOffsets }
+    if (paragraph.complete) {
+      paragraphIndex += 1
+      offset = 0
+    }
+    return fragment
+  }))
+}
 
 export function createNarrationChunks(
   paragraphs: string[],
   pages: PageParagraph[][],
-): NarrationChunk[] {
+  fragments = indexNarrationPages(paragraphs, pages),
+): (NarrationChunk & { sourceRanges: NarrationSourceRange[] })[] {
   const passages: Passage[] = []
   let current: Passage | undefined
   let lastParagraphIndex = -1
@@ -16,7 +57,7 @@ export function createNarrationChunks(
     const text = paragraph.replace(/\s+/g, ' ').trim()
     for (const sentence of segmenter.segment(text)) {
       let remaining = sentence.segment.trim()
-      let offset = sentence.index
+      let offset = sentence.index + sentence.segment.length - sentence.segment.trimStart().length
       while (remaining) {
         const limit = passages.length === 0 ? 240 : 480
         let length = Math.min(remaining.length, limit)
@@ -32,7 +73,13 @@ export function createNarrationChunks(
           continue
         }
         if (current) current.text += separator + part
-        else current = { text: part, paragraphIndex, offset }
+        else current = { text: part, paragraphIndex, offset, sourceRanges: [] }
+        const previousRange = current.sourceRanges.at(-1)
+        if (previousRange?.paragraphIndex === paragraphIndex) {
+          previousRange.end = offset + part.length
+        } else {
+          current.sourceRanges.push({ paragraphIndex, start: offset, end: offset + part.length })
+        }
         lastParagraphIndex = paragraphIndex
         const consumed = remaining.length - remaining.slice(length).trimStart().length
         remaining = remaining.slice(length).trimStart()
@@ -47,16 +94,9 @@ export function createNarrationChunks(
   if (current) passages.push(current)
 
   const positions: { paragraphIndex: number; offset: number; pageIndex: number }[] = []
-  let paragraphIndex = 0
-  let offset = 0
-  pages.forEach((page, pageIndex) => {
-    for (const paragraph of page) {
-      positions.push({ paragraphIndex, offset, pageIndex })
-      offset += paragraph.text.replace(/\s+/g, ' ').trim().length + 1
-      if (paragraph.complete) {
-        paragraphIndex += 1
-        offset = 0
-      }
+  fragments.forEach((page, pageIndex) => {
+    for (const fragment of page) {
+      positions.push({ paragraphIndex: fragment.paragraphIndex, offset: fragment.sourceOffsets[0], pageIndex })
     }
   })
   let positionIndex = 0
@@ -67,7 +107,11 @@ export function createNarrationChunks(
         (next.paragraphIndex === passage.paragraphIndex && next.offset > passage.offset)) break
       positionIndex += 1
     }
-    return { text: passage.text, pageIndex: positions[positionIndex]?.pageIndex ?? 0 }
+    return {
+      text: passage.text,
+      pageIndex: positions[positionIndex]?.pageIndex ?? 0,
+      sourceRanges: passage.sourceRanges,
+    }
   })
 }
 

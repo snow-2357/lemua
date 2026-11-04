@@ -1,6 +1,39 @@
 import type { NarrationOutput } from '../src/services/narrationPlayer'
+import type { NarrationWorkerRequest } from '../src/services/narrationWorkerTypes'
 
 export const fixtureWorkerStats = { started: 0, cancelled: 0, completed: 0 }
+
+export function installFixtureWorker() {
+  class FixtureWorker {
+    onmessage: ((event: MessageEvent) => void) | null = null
+    private timers = new Map<number, ReturnType<typeof setTimeout>>()
+    postMessage(request: NarrationWorkerRequest) {
+      if (request.type === 'cancel') {
+        fixtureWorkerStats.cancelled += 1
+        clearTimeout(this.timers.get(request.id))
+        this.timers.delete(request.id)
+        return
+      }
+      fixtureWorkerStats.started += 1
+      this.onmessage?.(new MessageEvent('message', {
+        data: { id: request.id, type: 'progress', message: 'Test model is generating audio in the background...' },
+      }))
+      this.timers.set(request.id, setTimeout(() => {
+        this.timers.delete(request.id)
+        fixtureWorkerStats.completed += 1
+        this.onmessage?.(new MessageEvent('message', {
+          data: { id: request.id, type: 'result', audio: silentWav(4) },
+        }))
+      }, 1500))
+    }
+    terminate() {
+      this.timers.forEach(clearTimeout)
+      this.timers.clear()
+    }
+  }
+  // Only test fixtures substitute inference; production uses the real worker.
+  Object.defineProperty(globalThis, 'Worker', { configurable: true, value: FixtureWorker })
+}
 
 export function silentWav(seconds = 2): Blob {
   const sampleRate = 8000

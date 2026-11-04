@@ -1,4 +1,5 @@
-import { createNarrationChunks, findNarrationStart } from '../src/utils/narrationText'
+import { createNarrationChunks, findNarrationStart, indexNarrationPages } from '../src/utils/narrationText'
+import { getNarrationHighlightOffsets } from '../src/utils/narrationHighlight'
 import { initialNarrationSnapshot, NarrationPlayer, pausedNarrationWordLimit } from '../src/services/narrationPlayer'
 import { getOrGenerateNarrationChunk, prepareNarrationSequence } from '../src/services/kokoroTts'
 import { deferred, FakeOutput, silentWav, until } from './narration.fixtures'
@@ -15,6 +16,46 @@ function equal(actual: unknown, expected: unknown) {
 function normalize(text: string) { return text.replace(/\s+/g, ' ').trim() }
 
 const tests: [string, () => Promise<void>][] = [
+  ['Passages retain exact source ranges, including repeated text in different paragraphs', async () => {
+    const paragraphs = [
+      'This sentence is repeated. '.repeat(21).trim(),
+      'This sentence is repeated. '.repeat(21).trim(),
+    ]
+    const chunks = createNarrationChunks(paragraphs, [])
+    for (const chunk of chunks) {
+      const source = chunk.sourceRanges.map(({ paragraphIndex, start, end }) =>
+        paragraphs[paragraphIndex].slice(start, end)).join(' ')
+      equal(normalize(source), normalize(chunk.text))
+    }
+    assert(chunks.some(({ sourceRanges }) => sourceRanges.some(({ paragraphIndex }) => paragraphIndex === 1)),
+      'Repeated text was mapped to the wrong paragraph')
+    assert(chunks.some(({ sourceRanges }) => sourceRanges.length > 1), 'Cross-paragraph passage was not mapped')
+  }],
+  ['Highlight offsets span pages and preserve inserted breaks inside long words', async () => {
+    const paragraphs = ['Alpha beta gamma delta.', 'abcdefghij', '\u{1f642} text.']
+    const pages = [
+      [{ text: 'Alpha\nbeta', continues: false, complete: false }],
+      [
+        { text: 'gamma\ndelta.', continues: true, complete: true },
+        { text: 'abc\ndef', continues: false, complete: false },
+      ],
+      [
+        { text: 'ghi\nj', continues: true, complete: true },
+        { text: '\u{1f642} text.', continues: false, complete: true },
+      ],
+    ]
+    const fragments = indexNarrationPages(paragraphs, pages)
+    const spoken = [{ paragraphIndex: 0, start: 6, end: 16 }]
+    equal(getNarrationHighlightOffsets(fragments[0][0], spoken), [{ start: 6, end: 10 }])
+    equal(getNarrationHighlightOffsets(fragments[1][0], spoken), [{ start: 0, end: 5 }])
+    const longWord = [{ paragraphIndex: 1, start: 2, end: 8 }]
+    equal(getNarrationHighlightOffsets(fragments[1][1], longWord), [{ start: 2, end: 7 }])
+    equal(getNarrationHighlightOffsets(fragments[2][0], longWord), [{ start: 0, end: 2 }])
+    equal(getNarrationHighlightOffsets(fragments[2][1], [
+      { paragraphIndex: 2, start: 0, end: 2 },
+    ]), [{ start: 0, end: 2 }])
+    equal(getNarrationHighlightOffsets(fragments[2][1], spoken), [])
+  }],
   ['Groups short sentences naturally, bounds work, and preserves every word', async () => {
     const paragraphs = [
       Array.from({ length: 45 }, (_, index) => `Sentence ${index + 1} is part of the story.`).join(' '),
@@ -72,6 +113,31 @@ const tests: [string, () => Promise<void>][] = [
       await until(() => output.sources.length === 5)
       equal(output.sources[4].start, output.sources[3].end)
       assert(states.includes('playing'), 'Playback did not begin')
+    } finally { player.stop() }
+  }],
+  ['Audible highlight follows the audio clock, holds on pause, and ignores prefetched passages', async () => {
+    const output = new FakeOutput()
+    let snapshot = initialNarrationSnapshot
+    const player = new NarrationPlayer(['One', 'Two', 'Three'], {
+      createOutput: () => output,
+      prepare: async (texts) => ({ chunkKeys: texts }),
+      generate: async () => silentWav(),
+    }, (next) => { snapshot = next }, () => {})
+    try {
+      await player.start(0)
+      await until(() => output.sources.length === 3)
+      equal(snapshot.audibleIndex, null)
+      output.advanceTo(0.1)
+      await until(() => snapshot.audibleIndex === 0)
+      player.pause()
+      await new Promise((resolve) => setTimeout(resolve, 30))
+      equal(snapshot.audibleIndex, 0)
+      await player.resume()
+      output.advanceTo(2.1)
+      equal(snapshot.audibleIndex, 1)
+      output.advanceTo(6.1)
+      equal(snapshot.state, 'finished')
+      equal(snapshot.audibleIndex, null)
     } finally { player.stop() }
   }],
   ['Pause during generation stays paused when audio arrives; resume preserves it', async () => {
@@ -255,6 +321,7 @@ const tests: [string, () => Promise<void>][] = [
       await until(() => calls === 2)
       output.advanceTo(3)
       equal(snapshot.state, 'buffering')
+      equal(snapshot.audibleIndex, null)
       second.resolve(silentWav())
       await until(() => output.sources.length === 2)
       assert(output.sources[1].start > 3, 'Recovery scheduled audio in the past')
@@ -275,6 +342,7 @@ const tests: [string, () => Promise<void>][] = [
     await player.start(0)
     await until(() => snapshot.state === 'error')
     equal(snapshot.error, 'Test inference failure')
+    equal(snapshot.audibleIndex, null)
     assert(output.closed, 'Failed output stayed open')
   }],
   ['Passage changes follow playback time, not the background generation cursor', async () => {

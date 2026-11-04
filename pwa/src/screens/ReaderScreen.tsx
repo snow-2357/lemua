@@ -1,10 +1,11 @@
-import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import HTMLFlipBook from 'react-pageflip'
 import type { Book } from '../types'
 import ReaderBottom from '../components/ReaderBottom'
 import Icon from '../components/Icon'
 import { truncateText } from '../utils/truncateText'
-import { createNarrationChunks } from '../utils/narrationText'
+import { createNarrationChunks, indexNarrationPages } from '../utils/narrationText'
+import { useNarrationHighlight } from '../hooks/useNarrationHighlight'
 
 type PageFlipApi = {
   flipNext: () => void
@@ -141,6 +142,11 @@ export default function ReaderScreen({
   const [flipSize, setFlipSize] = useState({ width: 0, height: 0 })
   const [flipBookRevision, setFlipBookRevision] = useState(0)
   const [prefersReducedMotion, setPrefersReducedMotion] = useState(false)
+  const [narrationPosition, setNarrationPosition] = useState<{
+    bookId: string
+    chapterIndex: number
+    index: number
+  } | null>(null)
   const readingViewport = useRef<HTMLDivElement>(null)
   const measurementText = useRef<HTMLParagraphElement>(null)
   const measurementPage = useRef<HTMLElement>(null)
@@ -156,10 +162,25 @@ export default function ReaderScreen({
     () => (paginatedChapter?.index === chapterIndex ? paginatedChapter.pages : []),
     [chapterIndex, paginatedChapter],
   )
-  const narrationChunks = useMemo(
-    () => createNarrationChunks(chapterParagraphs, pages),
+  const narrationFragments = useMemo(
+    () => indexNarrationPages(chapterParagraphs, pages),
     [chapterParagraphs, pages],
   )
+  const narrationChunks = useMemo(
+    () => createNarrationChunks(chapterParagraphs, pages, narrationFragments),
+    [chapterParagraphs, pages, narrationFragments],
+  )
+  const activeNarrationRanges = narrationPosition?.bookId === book.id &&
+    narrationPosition.chapterIndex === chapterIndex
+    ? narrationChunks[narrationPosition.index]?.sourceRanges ?? null
+    : null
+  useNarrationHighlight(readingViewport, narrationFragments, activeNarrationRanges)
+
+  const changeNarrationHighlight = useCallback((index: number | null) => {
+    setNarrationPosition((current) => index === null
+      ? current?.bookId === book.id && current.chapterIndex === chapterIndex ? null : current
+      : { bookId: book.id, chapterIndex, index })
+  }, [book.id, chapterIndex])
 
   useEffect(() => {
     const motionPreference = window.matchMedia('(prefers-reduced-motion: reduce)')
@@ -366,6 +387,7 @@ export default function ReaderScreen({
                         .filter(Boolean)
                         .join(' ')}
                       key={`${chapterIndex}-${pageIndex}-${index}`}
+                      data-reading-fragment={`${pageIndex}:${index}`}
                     >
                       {paragraph.text}
                     </p>
@@ -404,6 +426,7 @@ export default function ReaderScreen({
         onChangePage={onChangePage}
         onPreviousPage={previousPage}
         onNextPage={nextPage}
+        onNarrationHighlightChange={changeNarrationHighlight}
       />
       {showContents && (
         <div className="modal-backdrop" onClick={() => setShowContents(false)}>

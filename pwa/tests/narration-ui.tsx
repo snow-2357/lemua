@@ -1,39 +1,10 @@
 import { useState } from 'react'
 import { createRoot } from 'react-dom/client'
 import ReaderBottom from '../src/components/ReaderBottom'
-import type { NarrationWorkerRequest } from '../src/services/narrationWorkerTypes'
-import { fixtureWorkerStats, silentWav } from './narration.fixtures'
+import { installFixtureWorker } from './narration.fixtures'
 import '../src/App.css'
 
-// Only this fixture substitutes inference; production uses the real worker.
-class FixtureWorker {
-  onmessage: ((event: MessageEvent) => void) | null = null
-  private timers = new Map<number, ReturnType<typeof setTimeout>>()
-  postMessage(request: NarrationWorkerRequest) {
-    if (request.type === 'cancel') {
-      fixtureWorkerStats.cancelled += 1
-      clearTimeout(this.timers.get(request.id))
-      this.timers.delete(request.id)
-      return
-    }
-    fixtureWorkerStats.started += 1
-    this.onmessage?.(new MessageEvent('message', {
-      data: { id: request.id, type: 'progress', message: 'Test model is generating audio in the background...' },
-    }))
-    this.timers.set(request.id, setTimeout(() => {
-      this.timers.delete(request.id)
-      fixtureWorkerStats.completed += 1
-      this.onmessage?.(new MessageEvent('message', {
-        data: { id: request.id, type: 'result', audio: silentWav(4) },
-      }))
-    }, 1500))
-  }
-  terminate() {
-    this.timers.forEach(clearTimeout)
-    this.timers.clear()
-  }
-}
-Object.defineProperty(globalThis, 'Worker', { configurable: true, value: FixtureWorker })
+installFixtureWorker()
 
 const fixtureId = `narration-ui-${crypto.randomUUID()}`
 const chunks = Array.from({ length: 8 }, (_, index) => ({

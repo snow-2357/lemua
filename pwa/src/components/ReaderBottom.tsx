@@ -2,6 +2,7 @@ import { useEffect, useLayoutEffect, useRef, useState } from 'react'
 import type { NarrationChunk } from '../types'
 import { createNarrationOutput, initialNarrationSnapshot, NarrationPlayer } from '../services/narrationPlayer'
 import { findNarrationStart } from '../utils/narrationText'
+import { supportsNarrationHighlight } from '../utils/narrationHighlight'
 import Icon from './Icon'
 import Waveform from './Waveform'
 
@@ -16,6 +17,7 @@ type Props = {
   onChangePage: (page: number) => void
   onPreviousPage: () => void
   onNextPage: () => void
+  onNarrationHighlightChange?: (index: number | null) => void
 }
 
 function formatTime(time: number): string {
@@ -36,17 +38,32 @@ export default function ReaderBottom({
   onChangePage,
   onPreviousPage,
   onNextPage,
+  onNarrationHighlightChange,
 }: Props) {
   const [snapshot, setSnapshot] = useState(initialNarrationSnapshot)
   const [followText, setFollowText] = useState(false)
+  const [highlightText, setHighlightText] = useState(true)
+  const [highlightSupported] = useState(supportsNarrationHighlight)
   const playerRef = useRef<NarrationPlayer | null>(null)
-  const latest = useRef({ chunks, readerPage, onChangePage, followText })
+  const highlightedIndex = useRef<number | null>(null)
+  const latest = useRef({
+    chunks, readerPage, onChangePage, followText, highlightText, onNarrationHighlightChange,
+  })
 
   useLayoutEffect(() => {
-    latest.current = { chunks, readerPage, onChangePage, followText }
-  }, [chunks, readerPage, onChangePage, followText])
+    latest.current = { chunks, readerPage, onChangePage, followText, highlightText, onNarrationHighlightChange }
+  }, [chunks, readerPage, onChangePage, followText, highlightText, onNarrationHighlightChange])
 
-  useEffect(() => () => playerRef.current?.stop(), [])
+  useEffect(() => () => {
+    playerRef.current?.stop()
+    if (highlightedIndex.current !== null) onNarrationHighlightChange?.(null)
+  }, [onNarrationHighlightChange])
+
+  const notifyHighlight = (index: number | null) => {
+    if (index === highlightedIndex.current) return
+    highlightedIndex.current = index
+    latest.current.onNarrationHighlightChange?.(index)
+  }
 
   const busy = snapshot.state === 'loading' || snapshot.state === 'buffering'
   const active = busy || snapshot.state === 'playing' || snapshot.state === 'paused'
@@ -75,7 +92,10 @@ export default function ReaderBottom({
           return getOrGenerateNarrationChunk(key, text, 1, onProgress, signal)
         },
       },
-      setSnapshot,
+      (next) => {
+        setSnapshot(next)
+        notifyHighlight(highlightSupported && latest.current.highlightText ? next.audibleIndex : null)
+      },
       (index) => {
         const current = latest.current
         const page = current.chunks[index]?.pageIndex
@@ -91,6 +111,7 @@ export default function ReaderBottom({
   const stopPlayback = () => {
     playerRef.current?.stop()
     playerRef.current = null
+    notifyHighlight(null)
     setSnapshot(initialNarrationSnapshot)
   }
 
@@ -133,6 +154,21 @@ export default function ReaderBottom({
           <button type="button" className="audio-follow" aria-pressed={followText} onClick={() => setFollowText(!followText)}>
             Follow text: {followText ? 'on' : 'off'}
           </button>
+          {onNarrationHighlightChange && (
+            <button
+              type="button"
+              className="audio-follow"
+              aria-pressed={highlightSupported && highlightText}
+              disabled={!highlightSupported}
+              title={highlightSupported ? 'Highlight the spoken passage without turning pages' : 'Text highlighting is not supported by this browser'}
+              onClick={() => {
+                setHighlightText(!highlightText)
+                notifyHighlight(!highlightText ? snapshot.audibleIndex : null)
+              }}
+            >
+              Highlight text: {highlightSupported ? highlightText ? 'on' : 'off' : 'unavailable'}
+            </button>
+          )}
           {busy && <span className="audio-loading-note">Keep reading · controls stay available</span>}
         </div>
       </div>

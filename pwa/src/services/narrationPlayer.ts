@@ -8,6 +8,7 @@ export type NarrationSnapshot = {
   duration: number
   bufferedSeconds: number
   index: number
+  audibleIndex: number | null
 }
 
 export type NarrationOutput = {
@@ -43,6 +44,7 @@ export const initialNarrationSnapshot: NarrationSnapshot = {
   duration: 0,
   bufferedSeconds: 0,
   index: -1,
+  audibleIndex: null,
 }
 
 export function createNarrationOutput(): NarrationOutput {
@@ -202,6 +204,9 @@ export class NarrationPlayer {
       ...this.snapshot,
       state,
       message,
+      audibleIndex: state === 'playing'
+        ? current?.index ?? null
+        : state === 'paused' ? current?.index ?? this.snapshot.audibleIndex : null,
       currentTime,
       duration: Math.max(currentTime, this.decodedSeconds + this.remainingWords[this.nextIndex] * secondsPerWord),
       bufferedSeconds: this.scheduled.reduce(

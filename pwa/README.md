@@ -73,6 +73,15 @@ Stopping, leaving the reader, or changing chapter cancels obsolete queued work;
 an inference already executing may finish before the worker handles cancellation.
 Page following is opt-in through **Follow text**. Manual page buttons turn it off,
 so you can browse independently while listening.
+**Highlight text** is on by default in browsers supporting the CSS Custom
+Highlight API. It softly marks the currently spoken passage, not estimated
+individual words or lines. The highlight follows the audio clock (not background
+generation), remains on the last spoken passage while paused, and clears on
+stop, buffering, completion, error, or leaving the reader. It does not turn pages
+unless **Follow text** is also on, and can be switched off independently.
+Highlighting uses text ranges, so page layout, selection, audio cache keys, and
+the 1,000-word paused prefetch are unchanged. Browsers without the API show the
+highlight control as unavailable; reading and narration still work.
 
 ## Checks
 
@@ -90,3 +99,5 @@ bounded-buffer, pause/resume, error, and continuous-scheduling regressions.
 `/tests/narration-ui.html` is an interactive fixture using delayed, silent audio
 instead of downloading the model, for checking that page navigation and audio
 controls remain available during generation.
+`/tests/narration-reader.html` exercises passage highlighting in the actual
+paginated reader, with delayed silent audio and generated test text.

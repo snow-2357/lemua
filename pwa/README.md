@@ -31,6 +31,24 @@ chapter text are saved in IndexedDB on this device. The reader currently
 displays extracted chapter text; original EPUB styling and images are not
 rendered.
 
+## On-device narration
+
+Open a book and press the play button in the reader's bottom audio card to read
+the current chapter aloud paragraph by paragraph while the reader stays visible.
+Speech inference runs in a Web Worker so model execution does not block the
+reader. While a paragraph plays, the next four passages are queued for
+background generation and saved in IndexedDB; playback follows the saved
+chapter order, and cached passages are reused on later listens. Inference runs
+in the browser using ONNX Runtime Web; no application server is used. On first
+use, the browser downloads the model, voice pack, and metadata (about 120 MB
+total) from the project's Hugging Face repository and saves them in IndexedDB on
+this device. Later launches reuse those saved files. An internet connection is
+required for the initial download; browser storage can still be cleared or
+evicted by the browser.
+
+The PWA currently uses the bundled `tone_warm` voice with English (US)
+phonemization. Speech is generated when playback starts and is not uploaded.
+
 ## Checks
 
 ```sh

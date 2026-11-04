@@ -38,6 +38,18 @@ export default defineConfig({
       },
       workbox: {
         navigateFallback: 'index.html',
+        globIgnores: ['**/*.wasm'],
+        runtimeCaching: [
+          {
+            urlPattern: /\.wasm$/,
+            handler: 'CacheFirst',
+            options: {
+              cacheName: 'onnx-runtime-assets',
+              cacheableResponse: { statuses: [0, 200] },
+              expiration: { maxEntries: 4, maxAgeSeconds: 30 * 24 * 60 * 60 },
+            },
+          },
+        ],
       },
     }),
   ],

@@ -14,6 +14,11 @@ export type EpubChapter = {
   paragraphs: string[]
 }
 
+export type NarrationChunk = {
+  text: string
+  pageIndex: number
+}
+
 export type ImportedBook = Book & {
   isEpub: true
   file: Blob

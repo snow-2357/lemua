@@ -1,6 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
 import './App.css'
-import AudioPreviewScreen from './screens/AudioPreviewScreen'
 import LibraryScreen from './screens/LibraryScreen'
 import ProfileScreen from './screens/ProfileScreen'
 import ReaderScreen from './screens/ReaderScreen'
@@ -17,7 +16,7 @@ import {
 import type { EpubChapter, ImportedBook } from './types'
 import { getFileFingerprint } from './utils/fileFingerprint'
 
-type Page = 'library' | 'profile' | 'reader' | 'audio'
+type Page = 'library' | 'profile' | 'reader'
 
 function readableChapters(book: ImportedBook): EpubChapter[] {
   return book.chapters.filter((chapter) => !isContentsChapterTitle(chapter.title))
@@ -67,9 +66,6 @@ function App() {
   const [chapterIndex, setChapterIndex] = useState(0)
   const [readerPage, setReaderPage] = useState(0)
   const [chapterPageCounts, setChapterPageCounts] = useState<Record<number, number>>({})
-  const [audioExcerpt, setAudioExcerpt] = useState('')
-  const [isPlaying, setIsPlaying] = useState(false)
-  const [speed, setSpeed] = useState(1)
   const [notice, setNotice] = useState('')
   const [settingsLoaded, setSettingsLoaded] = useState(false)
   const importInProgress = useRef(false)
@@ -323,26 +319,10 @@ function App() {
                 : { ...currentCounts, [chapterIndex]: count },
             )
           }
-          onPageTextChange={setAudioExcerpt}
           progress={progress}
           onBack={goBackToLibrary}
           onChangeChapter={changeChapter}
           onChangePage={changeReaderPage}
-        />
-      )}
-      {page === 'audio' && activeBook && activeChapter && (
-        <AudioPreviewScreen
-          book={activeBook}
-          chapterTitle={activeChapter.title}
-          excerpt={audioExcerpt}
-          isPlaying={isPlaying}
-          speed={speed}
-          onBack={() => {
-            setPage('reader')
-            setIsPlaying(false)
-          }}
-          onTogglePlaying={() => setIsPlaying(!isPlaying)}
-          onChangeSpeed={setSpeed}
         />
       )}
       {notice && <div className="toast" role="status">{notice}</div>}

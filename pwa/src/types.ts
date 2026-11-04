@@ -17,6 +17,7 @@ export type EpubChapter = {
 export type NarrationChunk = {
   text: string
   pageIndex: number
+  endPageIndex: number
 }
 
 export type ImportedBook = Book & {

@@ -10,6 +10,7 @@ const fixtureId = `narration-ui-${crypto.randomUUID()}`
 const chunks = Array.from({ length: 8 }, (_, index) => ({
   text: `Fixture ${fixtureId}, passage ${index + 1}. This is a natural multi-sentence passage for testing.`,
   pageIndex: index,
+  endPageIndex: index,
 }))
 
 export default function Fixture() {

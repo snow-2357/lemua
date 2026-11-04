@@ -100,23 +100,28 @@ export function createNarrationChunks(
     }
   })
   let positionIndex = 0
-  return passages.map((passage) => {
+  const pageAt = (paragraphIndex: number, offset: number) => {
     while (positionIndex + 1 < positions.length) {
       const next = positions[positionIndex + 1]
-      if (next.paragraphIndex > passage.paragraphIndex ||
-        (next.paragraphIndex === passage.paragraphIndex && next.offset > passage.offset)) break
+      if (next.paragraphIndex > paragraphIndex ||
+        (next.paragraphIndex === paragraphIndex && next.offset > offset)) break
       positionIndex += 1
     }
+    return positions[positionIndex]?.pageIndex ?? 0
+  }
+  return passages.map((passage) => {
+    const pageIndex = pageAt(passage.paragraphIndex, passage.offset)
+    const end = passage.sourceRanges[passage.sourceRanges.length - 1]
     return {
       text: passage.text,
-      pageIndex: positions[positionIndex]?.pageIndex ?? 0,
+      pageIndex,
+      endPageIndex: pageAt(end.paragraphIndex, end.end - 1),
       sourceRanges: passage.sourceRanges,
     }
   })
 }
 
 export function findNarrationStart(chunks: NarrationChunk[], page: number): number {
-  const index = chunks.findIndex((chunk) => chunk.pageIndex >= page)
-  if (index < 0) return Math.max(0, chunks.length - 1)
-  return chunks[index].pageIndex === page ? index : Math.max(0, index - 1)
+  const index = chunks.findIndex((chunk) => chunk.endPageIndex >= page)
+  return index < 0 ? Math.max(0, chunks.length - 1) : index
 }

@@ -43,7 +43,11 @@ the reader where possible, with pagination restarting at that chapter's first pa
 ## On-device narration
 
 Open a book and press play in the bottom audio card to listen from the current
-page. Text is grouped into sentence-aware passages, with a shorter opening
+page. Playback begins with the passage covering the top of that page, even if it
+starts on the previous page, so a little text may repeat but no opening text is
+skipped. Pause/resume keeps the listening position even when you browse elsewhere;
+use Stop, then Play to start from the newly viewed page.
+Text is grouped into sentence-aware passages, with a shorter opening
 passage to reduce startup time and larger subsequent passages for natural phrasing.
 Speech inference runs in a Web Worker so model execution does not block the
 reader. Audio is scheduled on a continuous Web Audio timeline while a single

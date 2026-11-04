@@ -82,8 +82,88 @@ const tests: [string, () => Promise<void>][] = [
     ])
     equal(unpaginated.map(({ text }) => text), paginated.map(({ text }) => text))
     assert(paginated.some(({ pageIndex }) => pageIndex === 1), 'Long paragraphs must map to later pages')
-    equal(findNarrationStart(paginated, 1), paginated.findIndex(({ pageIndex }) => pageIndex === 1))
-    equal(findNarrationStart([{ text: 'Spans pages', pageIndex: 0 }, { text: 'Later', pageIndex: 3 }], 2), 0)
+    equal(findNarrationStart(paginated, 1), 1)
+    equal(paginated[1].pageIndex, 0)
+    equal(paginated[1].endPageIndex, 1)
+  }],
+  ['Play includes the passage covering the page top instead of skipping to a later passage', async () => {
+    const paragraphs = ['A', 'B', 'C', 'D', 'E', 'F'].map((letter) =>
+      `${letter} ${'steady '.repeat(23)}ends.`)
+    const split = paragraphs[2].indexOf(' ', 65)
+    const whole = (text: string) => ({ text, continues: false, complete: true })
+    const pages = [
+      [whole(paragraphs[0]), whole(paragraphs[1]),
+        { text: paragraphs[2].slice(0, split), continues: false, complete: false }],
+      [{ text: paragraphs[2].slice(split + 1), continues: true, complete: true },
+        whole(paragraphs[3]), whole(paragraphs[4])],
+      [whole(paragraphs[5])],
+    ]
+    const chunks = createNarrationChunks(paragraphs, pages)
+    equal(chunks.map(({ pageIndex, endPageIndex }) => [pageIndex, endPageIndex]),
+      [[0, 0], [0, 1], [1, 1], [2, 2]])
+    equal(findNarrationStart(chunks, 0), 0)
+    equal(findNarrationStart(chunks, 1), 1)
+    equal(findNarrationStart(chunks, 2), 3)
+    const fragments = indexNarrationPages(paragraphs, pages)
+    pages.forEach((_, page) => {
+      const start = findNarrationStart(chunks, page)
+      const offsets = getNarrationHighlightOffsets(fragments[page][0], chunks[start].sourceRanges)
+      assert(offsets.some(({ start, end }) => start === 0 && end > 0),
+        `Playback skipped the first visible text on page ${page + 1}`)
+    })
+  }],
+  ['Page selection handles multi-page passages, exact boundaries, and the final page', async () => {
+    const paragraph = 'x'.repeat(200)
+    const chunks = createNarrationChunks([paragraph], [
+      [{ text: paragraph.slice(0, 60), continues: false, complete: false }],
+      [{ text: paragraph.slice(60, 120), continues: true, complete: false }],
+      [{ text: paragraph.slice(120), continues: true, complete: true }],
+    ])
+    equal(chunks.length, 1)
+    equal(chunks[0].endPageIndex, 2)
+    for (const page of [0, 1, 2]) equal(findNarrationStart(chunks, page), 0)
+    const exact = createNarrationChunks(['a'.repeat(170), 'b'.repeat(170)], [
+      [{ text: 'a'.repeat(170), continues: false, complete: true }],
+      [{ text: 'b'.repeat(170), continues: false, complete: true }],
+    ])
+    equal(exact.map(({ pageIndex, endPageIndex }) => [pageIndex, endPageIndex]), [[0, 0], [1, 1]])
+    equal(findNarrationStart(exact, 1), 1)
+    const word = 'x'.repeat(650)
+    const splitWord = createNarrationChunks([word], [
+      [{ text: word.slice(0, 240), continues: false, complete: false }],
+      [{ text: word.slice(240), continues: true, complete: true }],
+    ])
+    equal(splitWord.map(({ pageIndex, endPageIndex }) => [pageIndex, endPageIndex]), [[0, 0], [1, 1]])
+    equal(findNarrationStart(splitWord, 1), 1)
+    equal(findNarrationStart([], 0), 0)
+  }],
+  ['Starting mid-chapter generates from the covering passage and resume keeps that position', async () => {
+    const chunks = [
+      { text: 'Earlier page', pageIndex: 0, endPageIndex: 0 },
+      { text: 'Covers the page top', pageIndex: 0, endPageIndex: 1 },
+      { text: 'Later on this page', pageIndex: 1, endPageIndex: 1 },
+      { text: 'Following page', pageIndex: 2, endPageIndex: 2 },
+    ]
+    const output = new FakeOutput()
+    const generated: string[] = []
+    let snapshot = initialNarrationSnapshot
+    const player = new NarrationPlayer(chunks.map(({ text }) => text), {
+      createOutput: () => output,
+      prepare: async (texts) => ({ chunkKeys: texts }),
+      generate: async (_, text) => { generated.push(text); return silentWav() },
+    }, (next) => { snapshot = next }, () => {})
+    try {
+      await player.start(findNarrationStart(chunks, 1))
+      await until(() => output.sources.length === 3)
+      equal(generated, chunks.slice(1).map(({ text }) => text))
+      output.advanceTo(0.1)
+      await until(() => snapshot.audibleIndex === 1)
+      player.pause()
+      await player.resume()
+      equal(snapshot.audibleIndex, 1)
+      output.advanceTo(2.1)
+      equal(snapshot.audibleIndex, 2)
+    } finally { player.stop() }
   }],
   ['Continuous scheduling, one producer, and at most four decoded passages ahead', async () => {
     const output = new FakeOutput()

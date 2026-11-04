@@ -182,6 +182,7 @@ async function fetchBuffer(
   const bytes = total > 0 ? new Uint8Array(total) : undefined
   const chunks: Uint8Array[] = []
   let downloaded = 0
+  let lastProgress = ''
 
   while (true) {
     const { done, value } = await reader.read()
@@ -197,7 +198,9 @@ async function fetchBuffer(
     downloaded += value.length
     const downloadedMb = Math.round(downloaded / (1024 * 1024))
     const totalMb = total ? ` of ${Math.round(total / (1024 * 1024))} MB` : ''
-    onProgress(`Downloading ${label}: ${downloadedMb} MB${totalMb}`)
+    const progress = `Downloading ${label}: ${downloadedMb} MB${totalMb}`
+    if (progress !== lastProgress) onProgress(progress)
+    lastProgress = progress
   }
 
   if (bytes) {
@@ -267,14 +270,18 @@ export async function getOrGenerateNarrationChunk(
   text: string,
   speed: number,
   onProgress: (message: string) => void,
+  signal?: AbortSignal,
 ): Promise<Blob> {
+  signal?.throwIfAborted()
   const cachedAudio = await readAudioChunk(key)
+  signal?.throwIfAborted()
   if (cachedAudio) {
     onProgress('Playing a saved narration chunk')
     return cachedAudio
   }
   onProgress('Generating the next narration chunk…')
-  const audio = await generateKokoroAudio(text, speed, onProgress)
+  const audio = await generateKokoroAudio(text, speed, onProgress, signal)
+  signal?.throwIfAborted()
   await writeAudioChunk(key, audio)
   return audio
 }
@@ -339,22 +346,24 @@ async function loadRuntime(
   if (!runtimePromise) {
     runtimePromise = (async () => {
       onProgress('Loading Kokoro settings…')
-      const metadataBuffer = await fetchBuffer(metadataUrl, 'settings', onProgress)
+      const [metadataBuffer, voiceBuffer, modelBuffer] = await Promise.all([
+        fetchBuffer(metadataUrl, 'settings', onProgress),
+        fetchBuffer(voicesUrl, 'voice pack', onProgress),
+        fetchBuffer(modelUrl, 'INT8 model', onProgress),
+      ])
       const metadata = JSON.parse(new TextDecoder().decode(metadataBuffer)) as Metadata
       if (!metadata.tokenizer_vocab) {
         throw new Error('The Kokoro settings do not include a phoneme vocabulary.')
       }
 
-      const voiceBuffer = await fetchBuffer(voicesUrl, 'voice pack', onProgress)
       const voiceArchive = unzipSync(new Uint8Array(voiceBuffer))
       if (!voiceArchive[`${warmVoice}.npy`]) {
         throw new Error(`The Kokoro voice pack does not include ${warmVoice}.`)
       }
 
-      const modelBuffer = await fetchBuffer(modelUrl, 'INT8 model', onProgress)
       onProgress('Preparing the Kokoro model on this device…')
       ort.env.wasm.numThreads = globalThis.crossOriginIsolated
-        ? Math.max(1, Math.min(4, navigator.hardwareConcurrency || 1))
+        ? Math.max(1, Math.min(3, (navigator.hardwareConcurrency || 2) - 1))
         : 1
       const session = await ort.InferenceSession.create(modelBuffer, {
         executionProviders: ['wasm'],
@@ -431,10 +440,13 @@ export async function generateKokoroAudio(
   text: string,
   speed: number,
   onProgress: (message: string) => void,
+  signal?: AbortSignal,
 ): Promise<Blob> {
   const runtime = await loadRuntime(onProgress)
+  signal?.throwIfAborted()
   onProgress('Preparing the page text…')
   const phonemeLines = await phonemize(text, language)
+  signal?.throwIfAborted()
   const phonemes = phonemeLines.join(' ').trim()
   const tokens = Array.from(phonemes)
     .map((phoneme) => runtime.vocab.get(phoneme))
@@ -446,6 +458,8 @@ export async function generateKokoroAudio(
   const voiceData = runtime.voiceArchive[`${warmVoice}.npy`]
   const audioChunks: Float32Array[] = []
   for (const tokenChunk of splitTokens(tokens)) {
+    await new Promise((resolve) => setTimeout(resolve, 0))
+    signal?.throwIfAborted()
     onProgress('Generating speech with Kokoro on this device…')
     const paddedTokens = BigInt64Array.from([
       0n,

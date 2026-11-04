@@ -1,5 +1,7 @@
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useEffect, useLayoutEffect, useRef, useState } from 'react'
 import type { NarrationChunk } from '../types'
+import { createNarrationOutput, initialNarrationSnapshot, NarrationPlayer } from '../services/narrationPlayer'
+import { findNarrationStart } from '../utils/narrationText'
 import Icon from './Icon'
 import Waveform from './Waveform'
 
@@ -35,241 +37,114 @@ export default function ReaderBottom({
   onPreviousPage,
   onNextPage,
 }: Props) {
-  const [audioUrl, setAudioUrl] = useState<string | null>(null)
-  const [isGenerating, setIsGenerating] = useState(false)
-  const [isPlaying, setIsPlaying] = useState(false)
-  const [status, setStatus] = useState('Tap play to read along')
-  const [error, setError] = useState('')
-  const [currentTime, setCurrentTime] = useState(0)
-  const [duration, setDuration] = useState(Number.NaN)
-  const audioRef = useRef<HTMLAudioElement>(null)
-  const audioUrlRef = useRef<string | null>(null)
-  const sequenceKeysRef = useRef<string[]>([])
-  const chunkIndexRef = useRef(-1)
-  const generationId = useRef(0)
+  const [snapshot, setSnapshot] = useState(initialNarrationSnapshot)
+  const [followText, setFollowText] = useState(false)
+  const playerRef = useRef<NarrationPlayer | null>(null)
+  const latest = useRef({ chunks, readerPage, onChangePage, followText })
 
-  useEffect(() => {
-    const player = audioRef.current
-    return () => {
-      generationId.current += 1
-      player?.pause()
-      if (audioUrlRef.current) URL.revokeObjectURL(audioUrlRef.current)
+  useLayoutEffect(() => {
+    latest.current = { chunks, readerPage, onChangePage, followText }
+  }, [chunks, readerPage, onChangePage, followText])
+
+  useEffect(() => () => playerRef.current?.stop(), [])
+
+  const busy = snapshot.state === 'loading' || snapshot.state === 'buffering'
+  const active = busy || snapshot.state === 'playing' || snapshot.state === 'paused'
+  const canPause = busy || snapshot.state === 'playing'
+
+  const togglePlayback = () => {
+    if (canPause) {
+      playerRef.current?.pause()
+      return
     }
-  }, [])
-
-  const showPlaybackError = (playbackError: unknown) => {
-    console.error('Could not generate or play Kokoro narration.', playbackError)
-    setError(
-      playbackError instanceof Error
-        ? playbackError.message
-        : 'Could not generate audio on this device.',
-    )
-    setStatus('Tap play to try again')
-    setIsPlaying(false)
-    setIsGenerating(false)
-  }
-
-  const prefetchNextChunks = useCallback(
-    (currentIndex: number, requestId: number) => {
-      const endIndex = Math.min(chunks.length, currentIndex + 5)
-      const queuedChunks = chunks
-        .map((chunk, index) => ({ chunk, index }))
-        .filter(({ index }) => index > currentIndex && index < endIndex)
-      if (queuedChunks.length === 0) return
-
-      void import('../services/kokoroTts')
-        .then(({ getOrGenerateNarrationChunk }) =>
-          Promise.all(
-            queuedChunks.map(({ chunk, index }) => {
-              const key = sequenceKeysRef.current[index]
-              if (!key) return Promise.resolve()
-              return getOrGenerateNarrationChunk(key, chunk.text, 1, () => {}).catch(
-                (prefetchError: unknown) => {
-                  if (requestId === generationId.current) {
-                    console.error(`Could not prepare narration passage ${index + 1}.`, prefetchError)
-                    setError(
-                      prefetchError instanceof Error
-                        ? `Could not prepare passage ${index + 1}: ${prefetchError.message}`
-                        : `Could not prepare passage ${index + 1}.`,
-                    )
-                  }
-                },
-              )
-            }),
-          ),
-        )
-        .catch((prefetchError: unknown) => {
-          if (requestId === generationId.current) showPlaybackError(prefetchError)
-        })
-    },
-    [chunks],
-  )
-
-  const playChunk = useCallback(async (index: number, requestId: number) => {
-    const player = audioRef.current
-    const chunk = chunks[index]
-    const chunkKey = sequenceKeysRef.current[index]
-    if (!player || !chunk || !chunkKey) return
-
-    setIsGenerating(true)
-    setStatus(`Preparing passage ${index + 1} of ${chunks.length}…`)
-    try {
-      const { getOrGenerateNarrationChunk } = await import('../services/kokoroTts')
-      const audio = await getOrGenerateNarrationChunk(chunkKey, chunk.text, 1, setStatus)
-      if (requestId !== generationId.current) return
-
-      if (audioUrlRef.current) URL.revokeObjectURL(audioUrlRef.current)
-      const url = URL.createObjectURL(audio)
-      audioUrlRef.current = url
-      chunkIndexRef.current = index
-      setAudioUrl(url)
-      setCurrentTime(0)
-      setDuration(Number.NaN)
-      player.src = url
-      player.load()
-      await player.play()
-      prefetchNextChunks(index, requestId)
-    } catch (playbackError) {
-      if (requestId === generationId.current) showPlaybackError(playbackError)
-    } finally {
-      if (requestId === generationId.current) setIsGenerating(false)
+    if (snapshot.state === 'paused') {
+      void playerRef.current?.resume()
+      return
     }
-  }, [chunks, prefetchNextChunks])
-
-  const togglePlayback = async () => {
-    const player = audioRef.current
-    if (!player || isGenerating) return
-    setError('')
-
-    if (audioUrl) {
-      if (player.paused) {
-        try {
-          await player.play()
-        } catch (playError) {
-          console.error('Could not play generated Kokoro audio.', playError)
-          setError('Could not play the generated audio. Please try again.')
+    playerRef.current?.stop()
+    const player = new NarrationPlayer(
+      chunks.map((chunk) => chunk.text),
+      {
+        createOutput: createNarrationOutput,
+        prepare: async (texts) => {
+          const { prepareNarrationSequence } = await import('../services/kokoroTts')
+          return prepareNarrationSequence(bookId, chapterIndex, texts, 1)
+        },
+        generate: async (key, text, signal, onProgress) => {
+          const { getOrGenerateNarrationChunk } = await import('../services/kokoroTts')
+          return getOrGenerateNarrationChunk(key, text, 1, onProgress, signal)
+        },
+      },
+      setSnapshot,
+      (index) => {
+        const current = latest.current
+        const page = current.chunks[index]?.pageIndex
+        if (current.followText && page !== undefined && page !== current.readerPage) {
+          current.onChangePage(page)
         }
-      } else {
-        player.pause()
-      }
-      return
-    }
-
-    if (chunks.length === 0) {
-      setError('There is no readable text in this chapter to play.')
-      return
-    }
-
-    setIsGenerating(true)
-    const requestId = ++generationId.current
-    try {
-      setStatus('Remembering this chapter’s narration order…')
-      const { prepareNarrationSequence } = await import('../services/kokoroTts')
-      const sequence = await prepareNarrationSequence(
-        bookId,
-        chapterIndex,
-        chunks.map((chunk) => chunk.text),
-        1,
-      )
-      if (requestId !== generationId.current) return
-      sequenceKeysRef.current = sequence.chunkKeys
-      const startIndex = chunks.findIndex((chunk) => chunk.pageIndex >= readerPage)
-      await playChunk(startIndex < 0 ? 0 : startIndex, requestId)
-    } catch (playbackError) {
-      if (requestId === generationId.current) showPlaybackError(playbackError)
-    } finally {
-      if (requestId === generationId.current) setIsGenerating(false)
-    }
+      },
+    )
+    playerRef.current = player
+    void player.start(findNarrationStart(chunks, readerPage))
   }
 
-  const playNextChunk = useCallback(() => {
-    const nextIndex = chunkIndexRef.current + 1
-    const nextChunk = chunks[nextIndex]
-    if (!nextChunk) {
-      setIsPlaying(false)
-      setStatus('Chapter finished · tap play to replay the last passage')
-      return
-    }
-
-    if (nextChunk.pageIndex !== readerPage) onChangePage(nextChunk.pageIndex)
-    void playChunk(nextIndex, generationId.current)
-  }, [chunks, onChangePage, playChunk, readerPage])
-
-  useEffect(() => {
-    const player = audioRef.current
-    if (!player) return
-
-    const handleEnded = () => {
-      player.currentTime = 0
-      setCurrentTime(0)
-      playNextChunk()
-    }
-    player.addEventListener('ended', handleEnded)
-    return () => player.removeEventListener('ended', handleEnded)
-  }, [playNextChunk])
+  const stopPlayback = () => {
+    playerRef.current?.stop()
+    playerRef.current = null
+    setSnapshot(initialNarrationSnapshot)
+  }
 
   return (
     <div className="reader-bottom">
-      <div className="audio-compact">
-        <span className="audio-compact-top">
+      <div className="audio-compact" aria-label="Chapter narration">
+        <div className="audio-compact-top">
           <span>
             <small>KOKORO · WARM TONE</small>
-            <strong>{isGenerating ? 'Preparing this passage' : 'Listen to this chapter'}</strong>
+            <strong>
+              {snapshot.state === 'playing' ? 'Listening to this chapter'
+                : busy ? 'Preparing narration in the background'
+                  : snapshot.state === 'paused' ? 'Narration paused' : 'Listen to this chapter'}
+            </strong>
           </span>
-          <button
-            type="button"
-            className="audio-play"
-            onClick={() => void togglePlayback()}
-            disabled={isGenerating}
-            aria-label={
-              isGenerating
-                ? 'Generating audio'
-                : isPlaying
-                  ? 'Pause narration'
-                  : audioUrl
-                    ? 'Play narration'
-                    : 'Read this chapter aloud'
-            }
-          >
-            {isPlaying ? <span className="pause-glyph">Ⅱ</span> : <Icon name="play" size={16} />}
+          <div className="audio-actions">
+            {active && (
+              <button type="button" className="audio-stop" onClick={stopPlayback} aria-label="Stop narration">
+                <span className="stop-glyph" aria-hidden="true" />
+              </button>
+            )}
+            <button
+              type="button"
+              className="audio-play"
+              onClick={togglePlayback}
+              disabled={chunks.length === 0 && !active}
+              aria-label={canPause ? 'Pause narration' : snapshot.state === 'paused' ? 'Resume narration' : 'Read this chapter aloud'}
+            >
+              {canPause ? <span className="pause-glyph" aria-hidden="true">Ⅱ</span> : <Icon name="play" size={16} />}
+            </button>
+          </div>
+        </div>
+        <Waveform progress={snapshot.duration > 0 ? snapshot.currentTime / snapshot.duration : 0} />
+        <div className="audio-compact-meta">
+          <span>{formatTime(snapshot.currentTime)}</span>
+          <span role={snapshot.error ? 'alert' : 'status'}>{snapshot.error || snapshot.message}</span>
+          <span title="Estimated listening time">{snapshot.duration > 0 ? `~${formatTime(snapshot.duration)}` : '--:--'}</span>
+        </div>
+        <div className="audio-options">
+          <button type="button" className="audio-follow" aria-pressed={followText} onClick={() => setFollowText(!followText)}>
+            Follow text: {followText ? 'on' : 'off'}
           </button>
-        </span>
-        <Waveform
-          progress={Number.isFinite(duration) && duration > 0 ? currentTime / duration : 0}
-        />
-        <span className="audio-compact-meta">
-          <span>{formatTime(currentTime)}</span>
-          <span aria-live="polite">{error || status}</span>
-          <span>{formatTime(duration)}</span>
-        </span>
-        <audio
-          ref={audioRef}
-          hidden
-          onLoadedMetadata={(event) => setDuration(event.currentTarget.duration)}
-          onPlay={() => {
-            setIsPlaying(true)
-            setStatus('Reading this page aloud')
-          }}
-          onPause={(event) => {
-            setIsPlaying(false)
-            if (!event.currentTarget.ended) setStatus('Narration paused')
-          }}
-          onTimeUpdate={(event) => {
-            setCurrentTime(event.currentTarget.currentTime)
-          }}
-        />
+          {busy && <span className="audio-loading-note">Keep reading · controls stay available</span>}
+        </div>
       </div>
       <div className="reader-progress">
         <span style={{ width: `${progress}%` }} />
       </div>
       <div className="reader-controls">
-        <button className="page-arrow" aria-label="Previous page" onClick={onPreviousPage}>
+        <button className="page-arrow" aria-label="Previous page" onClick={() => { setFollowText(false); onPreviousPage() }}>
           <Icon name="chevron-left" size={22} />
         </button>
-        <span>
-          {chapterTitle} <i>·</i> Page {readerPage + 1} of {pageCount}
-        </span>
-        <button className="page-arrow" aria-label="Next page" onClick={onNextPage}>
+        <span>{chapterTitle} <i>·</i> Page {readerPage + 1} of {pageCount}</span>
+        <button className="page-arrow" aria-label="Next page" onClick={() => { setFollowText(false); onNextPage() }}>
           <Icon name="chevron-right" size={22} />
         </button>
       </div>

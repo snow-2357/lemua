@@ -10,30 +10,17 @@ type NarrationSequence = {
   chunkKeys: string[]
 }
 
-type WorkerRequest = {
-  id: number
-  type: 'generate'
-  key: string
-  text: string
-  speed: number
-}
-
-type WorkerResponse =
-  | { id: number; type: 'progress'; message: string }
-  | { id: number; type: 'result'; audio: Blob }
-  | { id: number; type: 'error'; message: string }
-
 type PendingRequest = {
   resolve: (audio: Blob) => void
   reject: (error: Error) => void
   onProgress: (message: string) => void
+  cleanup: () => void
 }
 
 let narrationDatabasePromise: Promise<IDBDatabase> | undefined
 let generationWorker: Worker | undefined
 let nextRequestId = 0
 const pendingRequests = new Map<number, PendingRequest>()
-const chunkRequests = new Map<string, Promise<Blob>>()
 
 function openNarrationDatabase(): Promise<IDBDatabase> {
   if (!narrationDatabasePromise) {
@@ -87,13 +74,9 @@ function saveNarrationSequence(sequence: NarrationSequence): Promise<void> {
   )
 }
 
-function hashText(value: string): string {
-  let hash = 0xcbf29ce484222325n
-  for (const byte of new TextEncoder().encode(value)) {
-    hash ^= BigInt(byte)
-    hash = BigInt.asUintN(64, hash * 0x100000001b3n)
-  }
-  return hash.toString(16).padStart(16, '0')
+async function hashText(value: string): Promise<string> {
+  const hash = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(value))
+  return Array.from(new Uint8Array(hash), (byte) => byte.toString(16).padStart(2, '0')).join('')
 }
 
 export async function prepareNarrationSequence(
@@ -102,7 +85,7 @@ export async function prepareNarrationSequence(
   chunks: string[],
   speed: number,
 ): Promise<{ chunkKeys: string[] }> {
-  const sequenceSignature = hashText(chunks.join('\u001e'))
+  const sequenceSignature = await hashText(chunks.join('\u001e'))
   const key = [
     encodeURIComponent(bookId),
     chapterIndex,
@@ -110,7 +93,9 @@ export async function prepareNarrationSequence(
     speed,
     sequenceSignature,
   ].join(':')
-  const chunkKeys = chunks.map((text, index) => `${key}:${index}:${hashText(text)}`)
+  const chunkKeys = await Promise.all(chunks.map(async (text) =>
+    `kokoro:v4:tone_warm:${speed}:${await hashText(text)}`,
+  ))
   await saveNarrationSequence({ key, bookId, chapterIndex, speed, chunkKeys })
   return { chunkKeys }
 }
@@ -120,7 +105,7 @@ function getWorker(): Worker {
     const worker = new Worker(new URL('./kokoroTts.worker.ts', import.meta.url), {
       type: 'module',
     })
-    worker.onmessage = (event: MessageEvent<WorkerResponse>) => {
+    worker.onmessage = (event: MessageEvent<NarrationWorkerResponse>) => {
       const response = event.data
       const pending = pendingRequests.get(response.id)
       if (!pending) return
@@ -129,13 +114,17 @@ function getWorker(): Worker {
         pending.onProgress(response.message)
       } else {
         pendingRequests.delete(response.id)
+        pending.cleanup()
         if (response.type === 'result') pending.resolve(response.audio)
         else pending.reject(new Error(response.message))
       }
     }
     worker.onerror = (event) => {
       const error = new Error(event.message || 'Kokoro narration worker failed.')
-      pendingRequests.forEach(({ reject }) => reject(error))
+      pendingRequests.forEach(({ reject, cleanup }) => {
+        cleanup()
+        reject(error)
+      })
       pendingRequests.clear()
       worker.terminate()
       if (generationWorker === worker) generationWorker = undefined
@@ -150,26 +139,53 @@ function requestChunk(
   text: string,
   speed: number,
   onProgress: (message: string) => void,
+  signal: AbortSignal,
 ): Promise<Blob> {
-  const existing = chunkRequests.get(key)
-  if (existing) return existing
-
+  signal.throwIfAborted()
   const id = ++nextRequestId
   const worker = getWorker()
-  const request = new Promise<Blob>((resolve, reject) => {
-    pendingRequests.set(id, { resolve, reject, onProgress })
-    worker.postMessage({ id, type: 'generate', key, text, speed } satisfies WorkerRequest)
+  return new Promise<Blob>((resolve, reject) => {
+    const abort = () => {
+      pendingRequests.delete(id)
+      worker.postMessage({ id, type: 'cancel' } satisfies NarrationWorkerRequest)
+      reject(signal.reason)
+    }
+    const cleanup = () => signal.removeEventListener('abort', abort)
+    pendingRequests.set(id, { resolve, reject, onProgress, cleanup })
+    signal.addEventListener('abort', abort, { once: true })
+    try {
+      worker.postMessage({ id, type: 'generate', key, text, speed } satisfies NarrationWorkerRequest)
+    } catch (error) {
+      pendingRequests.delete(id)
+      cleanup()
+      reject(error)
+    }
   })
-  chunkRequests.set(key, request)
-  void request.finally(() => chunkRequests.delete(key)).catch(() => {})
-  return request
 }
 
-export function getOrGenerateNarrationChunk(
+export async function getOrGenerateNarrationChunk(
   key: string,
   text: string,
   speed: number,
   onProgress: (message: string) => void,
+  signal: AbortSignal,
 ): Promise<Blob> {
-  return requestChunk(key, text, speed, onProgress)
+  signal.throwIfAborted()
+  const database = await openNarrationDatabase()
+  const cached = await new Promise<Blob | undefined>((resolve, reject) => {
+    const transaction = database.transaction(audioStoreName, 'readonly')
+    const request = transaction.objectStore(audioStoreName).get(key)
+    request.onsuccess = () => {
+      const record: unknown = request.result
+      resolve(typeof record === 'object' && record !== null && 'audio' in record &&
+        record.audio instanceof Blob ? record.audio : undefined)
+    }
+    request.onerror = () => reject(request.error ?? new Error('Could not read saved narration audio.'))
+    transaction.onabort = () => reject(transaction.error ?? new Error('Reading saved narration was aborted.'))
+  })
+  signal.throwIfAborted()
+  // Cached playback must never wait behind inference jobs in the worker.
+  if (cached instanceof Blob) return cached
+  return requestChunk(key, text, speed, onProgress, signal)
 }
+import type { NarrationWorkerRequest, NarrationWorkerResponse } from './narrationWorkerTypes'

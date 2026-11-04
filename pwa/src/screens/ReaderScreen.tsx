@@ -1,9 +1,10 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import HTMLFlipBook from 'react-pageflip'
-import type { Book, NarrationChunk } from '../types'
+import type { Book } from '../types'
 import ReaderBottom from '../components/ReaderBottom'
 import Icon from '../components/Icon'
 import { truncateText } from '../utils/truncateText'
+import { createNarrationChunks } from '../utils/narrationText'
 
 type PageFlipApi = {
   flipNext: () => void
@@ -105,50 +106,6 @@ function paginateParagraphs(
   return pages.length > 1 && pages[pages.length - 1].length === 0 ? pages.slice(0, -1) : pages
 }
 
-function splitNarrationText(text: string): string[] {
-  const sentences = text.match(/[^.!?…]+(?:[.!?…]+["'”’)]*|$)/gu) ?? [text]
-  const chunks: string[] = []
-
-  for (const sentence of sentences) {
-    let remaining = sentence.trim()
-    while (remaining.length > 260) {
-      let splitAt = remaining.lastIndexOf(' ', 260)
-      if (splitAt < 1) splitAt = 260
-      chunks.push(remaining.slice(0, splitAt).trim())
-      remaining = remaining.slice(splitAt).trim()
-    }
-    if (remaining) chunks.push(remaining)
-  }
-  return chunks
-}
-
-function getNarrationChunks(pages: PageParagraph[][]): NarrationChunk[] {
-  const paragraphs: NarrationChunk[] = []
-  let currentParagraph: NarrationChunk | undefined
-
-  pages.forEach((page, pageIndex) => {
-    page.forEach((paragraph) => {
-      const text = paragraph.text.replace(/\s+/g, ' ').trim()
-      if (paragraph.continues && currentParagraph) {
-        currentParagraph.text = `${currentParagraph.text} ${text}`
-      } else {
-        if (currentParagraph) paragraphs.push(currentParagraph)
-        currentParagraph = { text, pageIndex }
-      }
-
-      if (paragraph.complete && currentParagraph) {
-        paragraphs.push(currentParagraph)
-        currentParagraph = undefined
-      }
-    })
-  })
-
-  if (currentParagraph) paragraphs.push(currentParagraph)
-  return paragraphs.flatMap(({ text, pageIndex }) =>
-    splitNarrationText(text).map((chunkText) => ({ text: chunkText, pageIndex })),
-  )
-}
-
 type Props = {
   book: Book
   chapterTitles: string[]
@@ -199,7 +156,10 @@ export default function ReaderScreen({
     () => (paginatedChapter?.index === chapterIndex ? paginatedChapter.pages : []),
     [chapterIndex, paginatedChapter],
   )
-  const narrationChunks = useMemo(() => getNarrationChunks(pages), [pages])
+  const narrationChunks = useMemo(
+    () => createNarrationChunks(chapterParagraphs, pages),
+    [chapterParagraphs, pages],
+  )
 
   useEffect(() => {
     const motionPreference = window.matchMedia('(prefers-reduced-motion: reduce)')

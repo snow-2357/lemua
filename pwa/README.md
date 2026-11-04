@@ -42,12 +42,15 @@ the reader where possible, with pagination restarting at that chapter's first pa
 
 ## On-device narration
 
-Open a book and press the play button in the reader's bottom audio card to read
-the current chapter aloud paragraph by paragraph while the reader stays visible.
+Open a book and press play in the bottom audio card to listen from the current
+page. Text is grouped into sentence-aware passages, with a shorter opening
+passage to reduce startup time and larger subsequent passages for natural phrasing.
 Speech inference runs in a Web Worker so model execution does not block the
-reader. While a paragraph plays, the next four passages are queued for
-background generation and saved in IndexedDB; playback follows the saved
-chapter order, and cached passages are reused on later listens. Inference runs
+reader. Audio is scheduled on a continuous Web Audio timeline while a single
+background producer prepares more. Lookahead adapts to generation time (20–60
+seconds, capped at four decoded passages); cached audio bypasses the worker queue.
+Generated passages are saved in IndexedDB using text/voice/speed keys and reused
+independently of pagination or chapter position. Inference runs
 in the browser using ONNX Runtime Web; no application server is used. On first
 use, the browser downloads the model, voice pack, and metadata (about 120 MB
 total) from the project's Hugging Face repository and saves them in IndexedDB on
@@ -57,6 +60,13 @@ evicted by the browser.
 
 The PWA currently uses the bundled `tone_warm` voice with English (US)
 phonemization. Speech is generated when playback starts and is not uploaded.
+First-use download/model startup and devices that cannot synthesize faster than
+playback can still cause waiting; the card reports loading/buffering without
+covering or disabling the reader. Pause and stop remain available during loading.
+Stopping, leaving the reader, or changing chapter cancels obsolete queued work;
+an inference already executing may finish before the worker handles cancellation.
+Page following is opt-in through **Follow text**. Manual page buttons turn it off,
+so you can browse independently while listening.
 
 ## Checks
 
@@ -68,3 +78,9 @@ npm run build
 For browser-based EPUB regression tests, run the development server and open
 `/tests/epub.html`. The tests use the browser's real HTML/XML parsers and generated
 EPUB fixtures, including 135 chapters distributed across shared XHTML files.
+
+Open `/tests/narration.html` for narration grouping, cache, cancellation,
+bounded-buffer, pause/resume, error, and continuous-scheduling regressions.
+`/tests/narration-ui.html` is an interactive fixture using delayed, silent audio
+instead of downloading the model, for checking that page navigation and audio
+controls remain available during generation.

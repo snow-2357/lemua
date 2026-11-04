@@ -1,4 +1,5 @@
 import type { ImportedBook } from './types'
+import { epubParserVersion, parseEpub } from './epub'
 
 export type UserSettings = {
   name: string
@@ -138,6 +139,28 @@ export async function loadImportedBooks(): Promise<ImportedBook[]> {
 
 export async function persistLastRead(bookId: string): Promise<void> {
   await updateImportedBook(bookId, { lastReadAt: Date.now() })
+}
+
+export async function upgradeImportedBook(book: ImportedBook): Promise<ImportedBook> {
+  if (book.epubParserVersion === epubParserVersion) return book
+
+  const parsed = await parseEpub(new File([book.file], `${book.title}.epub`))
+  const previousParagraph = book.chapters[book.lastChapterIndex ?? 0]?.paragraphs[0]
+  const matchedIndex = previousParagraph
+    ? parsed.chapters.findIndex((chapter) => chapter.paragraphs.includes(previousParagraph))
+    : -1
+  const lastChapterIndex = Math.max(0, matchedIndex)
+  // Old page numbers refer to file-sized chapters, not the recovered chapter boundaries.
+  const updatedBook: ImportedBook = {
+    ...book,
+    chapters: parsed.chapters,
+    epubParserVersion,
+    lastChapterIndex,
+    lastReaderPage: 0,
+    progress: Math.round((lastChapterIndex / parsed.chapters.length) * 100),
+  }
+  await updateImportedBook(book.id, updatedBook)
+  return updatedBook
 }
 
 export async function persistReadingPosition(

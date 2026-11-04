@@ -477,7 +477,6 @@ export default function ReaderScreen({
                     setShowContents(false)
                   }}
                 >
-                  <span className="contents-index">{String(index + 1).padStart(2, '0')}</span>
                   <span>{chapter}</span>
                   <Icon name="chevron-right" size={18} />
                 </button>

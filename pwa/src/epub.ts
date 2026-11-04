@@ -7,6 +7,13 @@ const maxEntrySize = 12 * 1024 * 1024
 const maxTextEntries = 1000
 const coverColors = ['#849887', '#a9857d', '#9386a3', '#8799a8', '#aa966d']
 const coverMarks = ['✦', '❋', '◈', '❦', '✿']
+export const epubParserVersion = 2
+
+type NavigationEntry = {
+  path: string
+  fragment: string
+  title: string
+}
 
 function parseXml(source: string, label: string): Document {
   const document = new DOMParser().parseFromString(source, 'application/xml')
@@ -28,14 +35,21 @@ function resolveArchivePath(basePath: string, href: string): string {
   return decodeURIComponent(path.replace(/^\/+/, ''))
 }
 
-function getNavigationTitles(
+function getNavigationEntries(
   archive: ReturnType<typeof unzipSync>,
   manifest: Map<string, { href: string; properties: string; mediaType: string }>,
   packageDirectory: string,
-): Map<string, string> {
-  const titles = new Map<string, string>()
+): NavigationEntry[] {
+  // EPUB 3 navigation takes precedence over its optional legacy NCX.
+  const items = Array.from(manifest.values()).sort(
+    (left, right) =>
+      Number(right.properties.split(/\s+/).includes('nav')) -
+      Number(left.properties.split(/\s+/).includes('nav')),
+  )
 
-  for (const item of manifest.values()) {
+  for (const item of items) {
+    const entries: NavigationEntry[] = []
+    const seen = new Set<string>()
     const isNcx = item.mediaType === 'application/x-dtbncx+xml' || /\.ncx$/i.test(item.href)
     if (!isNcx && !item.properties.split(/\s+/).includes('nav')) continue
 
@@ -46,11 +60,16 @@ function getNavigationTitles(
     const addTitle = (href: string, title: string) => {
       const normalizedTitle = title.replace(/\s+/g, ' ').trim()
       if (!href || !normalizedTitle) return
-      const targetPath = resolveArchivePath(
+      const path = resolveArchivePath(
         navigationPath.slice(0, navigationPath.lastIndexOf('/') + 1),
         href,
       )
-      if (!titles.has(targetPath)) titles.set(targetPath, normalizedTitle)
+      const hashIndex = href.indexOf('#')
+      const fragment = hashIndex < 0 ? '' : decodeURIComponent(href.slice(hashIndex + 1))
+      const key = `${path}#${fragment}`
+      if (seen.has(key)) return
+      seen.add(key)
+      entries.push({ path, fragment, title: normalizedTitle })
     }
 
     if (isNcx) {
@@ -58,9 +77,11 @@ function getNavigationTitles(
       for (const point of localNameElements(document, 'navPoint')) {
         const label = localNameElements(point, 'navLabel')[0]
         const title = label && localNameElements(label, 'text')[0]?.textContent
-        const href = localNameElements(point, 'content')[0]?.getAttribute('src')
+        const href = Array.from(point.children)
+          .find((element) => element.localName === 'content')?.getAttribute('src')
         if (href && title) addTitle(href, title)
       }
+      if (entries.length > 0) return entries
       continue
     }
 
@@ -81,9 +102,10 @@ function getNavigationTitles(
     for (const link of navigation?.querySelectorAll('a[href]') ?? []) {
       addTitle(link.getAttribute('href') ?? '', link.textContent ?? '')
     }
+    if (entries.length > 0) return entries
   }
 
-  return titles
+  return []
 }
 
 function isStandaloneUrl(text: string): boolean {
@@ -97,9 +119,12 @@ function filterStandaloneUrls(paragraphs: string[]): string[] {
 }
 
 function makeParagraphs(document: Document): string[] {
-  document.querySelectorAll('script, style, noscript, svg').forEach((element) => {
+  document.querySelectorAll('script, style, noscript, svg, nav, h1, h2, h3, h4, h5, h6').forEach((element) => {
     element.remove()
   })
+  for (const element of Array.from(document.body.querySelectorAll('*'))) {
+    if (hasContentsSemantics(element)) element.remove()
+  }
 
   const paragraphs = Array.from(document.querySelectorAll('p'))
     .map((element) => element.textContent?.replace(/\s+/g, ' ').trim() ?? '')
@@ -126,43 +151,82 @@ export function isContentsChapterTitle(title: string): boolean {
   return /^(?:table of )?contents(?: page)?$/i.test(title.replace(/\s+/g, ' ').trim())
 }
 
-function isNonNarrativeSectionTitle(title: string, bookTitle: string): boolean {
-  const normalizedTitle = title.replace(/\s+/g, ' ').trim()
-  return (
-    isContentsChapterTitle(normalizedTitle) ||
-    normalizedTitle.localeCompare(bookTitle.trim(), undefined, {
-      sensitivity: 'accent',
-    }) === 0 ||
-    /^(?:cover(?: page)?|title page|critical acclaim\b|other books by\b|front ?matter\b|dedication\b|epigram\b|copyright\b|acknowledg(?:e)?ments\b|titles available\b|about the author\b|part\s+\d+\b)/i.test(
-      normalizedTitle,
+function hasContentsSemantics(element: Element): boolean {
+  return Array.from(element.attributes).some((attribute) => {
+    const values = attribute.value.toLowerCase().split(/\s+/)
+    return (
+      (attribute.localName === 'type' && values.includes('toc')) ||
+      (attribute.localName === 'role' && values.includes('doc-toc'))
     )
-  )
+  })
 }
 
-function isContentsDocument(document: Document): boolean {
-  const hasTocSemantics = Array.from(document.querySelectorAll('*')).some((element) =>
-    Array.from(element.attributes).some((attribute) => {
-      const name = attribute.localName.toLowerCase()
-      const value = attribute.value.toLowerCase()
-      const values = value.split(/\s+/)
-      return (
-        (name === 'type' && values.includes('toc')) ||
-        (name === 'role' && values.includes('doc-toc')) ||
-        ((name === 'id' || name === 'class' || name === 'aria-label') &&
-          /(?:^|[^a-z0-9])(?:toc|table[\s_-]?of[\s_-]?contents?)(?:$|[^a-z0-9])/.test(value))
-      )
-    }),
-  )
-  if (hasTocSemantics) return true
-
-  const heading = document.querySelector('h1, h2, h3, h4, h5, h6')?.textContent
-    ?.replace(/\s+/g, ' ')
-    .trim()
-  if (isContentsChapterTitle(heading ?? '') || isContentsChapterTitle(document.title)) {
-    return true
+function extractChapters(
+  document: Document,
+  entries: NavigationEntry[],
+  fallbackTitle: string,
+): EpubChapter[] {
+  const boundaries: { element: Element; title: string }[] = []
+  for (const entry of entries) {
+    const element = entry.fragment
+      ? document.getElementById(entry.fragment) ??
+        Array.from(document.querySelectorAll('a[name]'))
+          .find((anchor) => anchor.getAttribute('name') === entry.fragment)
+      : document.body
+    if (!element || !document.body.contains(element)) {
+      throw new Error(`This EPUB links to a missing chapter: "${entry.title}" (#${entry.fragment}).`)
+    }
+    if (!boundaries.some((boundary) => boundary.element === element)) {
+      boundaries.push({ element, title: entry.title })
+    }
   }
 
-  return false
+  if (boundaries.length === 0) {
+    // Without a TOC, repeated headings at the highest level mark chapter starts.
+    for (let level = 1; level <= 6; level += 1) {
+      const headings = Array.from(document.body.querySelectorAll(`h${level}`))
+        .filter((heading) => !heading.closest('nav'))
+      if (headings.length < 2) continue
+      boundaries.push(...headings.map((element) => ({
+        element,
+        title: element.textContent?.replace(/\s+/g, ' ').trim() || fallbackTitle,
+      })))
+      break
+    }
+  }
+
+  boundaries.sort((left, right) =>
+    left.element.compareDocumentPosition(right.element) & Node.DOCUMENT_POSITION_FOLLOWING
+      ? -1
+      : 1,
+  )
+  if (boundaries[0]?.element !== document.body) {
+    boundaries.unshift({
+      element: document.body,
+      title: boundaries.length > 0 ? document.title.trim() || fallbackTitle : fallbackTitle,
+    })
+  }
+
+  const chapters: EpubChapter[] = []
+  boundaries.forEach((boundary, index) => {
+    const range = document.createRange()
+    if (boundary.element === document.body) range.setStart(document.body, 0)
+    else range.setStartBefore(boundary.element)
+    const next = boundaries[index + 1]
+    if (next) range.setEndBefore(next.element)
+    else range.setEnd(document.body, document.body.childNodes.length)
+
+    const section = document.implementation.createHTMLDocument('')
+    section.body.append(range.cloneContents())
+    if (isContentsChapterTitle(boundary.title) || hasContentsSemantics(boundary.element)) {
+      return
+    }
+    const paragraphs = makeParagraphs(section)
+    if (paragraphs.length > 0) {
+      chapters.push({ title: boundary.title, paragraphs })
+    }
+  })
+  return chapters
 }
 
 export async function parseEpub(file: File): Promise<ImportedBook> {
@@ -240,35 +304,38 @@ export async function parseEpub(file: File): Promise<ImportedBook> {
     getMetadataValue(packageDocument, 'title') ||
     file.name.replace(/\.epub$/i, '')
   const author = getMetadataValue(packageDocument, 'creator') || 'Unknown author'
-  const navigationTitles = getNavigationTitles(archive, manifest, packageDirectory)
+  const navigationEntries = getNavigationEntries(archive, manifest, packageDirectory)
   const chapters: EpubChapter[] = []
 
   for (const itemRef of localNameElements(packageDocument, 'itemref')) {
     const item = manifest.get(itemRef.getAttribute('idref') ?? '')
-    if (!item || item.properties.split(/\s+/).includes('nav')) continue
+    if (!item) {
+      throw new Error('This EPUB has a reading-order entry missing from its manifest.')
+    }
+    if (
+      item.mediaType !== 'application/xhtml+xml' &&
+      item.mediaType !== 'text/html' &&
+      !/\.x?html?$/i.test(item.href)
+    ) continue
 
     const chapterPath = resolveArchivePath(packageDirectory, item.href)
     const chapterFile = archive[chapterPath]
-    if (!chapterFile) continue
-    if (navigationTitles.size > 0 && !navigationTitles.has(chapterPath)) continue
+    if (!chapterFile) throw new Error(`This EPUB is missing its content file: ${chapterPath}.`)
 
     const document = new DOMParser().parseFromString(
       strFromU8(chapterFile),
       'text/html',
     )
-    if (isContentsDocument(document)) continue
-
     const heading = document
       .querySelector('h1, h2, h3, h4, h5, h6')
       ?.textContent?.replace(/\s+/g, ' ')
       .trim()
-    const chapterTitle =
-      navigationTitles.get(chapterPath) || heading || document.title.trim()
-    if (isNonNarrativeSectionTitle(chapterTitle, bookTitle)) continue
-    const paragraphs = makeParagraphs(document)
-    if (paragraphs.length > 0) {
-      chapters.push({ title: chapterTitle, paragraphs })
-    }
+    const chapterTitle = heading || document.title.trim() || `Section ${chapters.length + 1}`
+    chapters.push(...extractChapters(
+      document,
+      navigationEntries.filter((entry) => entry.path === chapterPath),
+      chapterTitle,
+    ))
   }
 
   if (chapters.length === 0) {
@@ -292,6 +359,7 @@ export async function parseEpub(file: File): Promise<ImportedBook> {
     isEpub: true,
     file,
     chapters,
+    epubParserVersion,
     lastReadAt: undefined,
   }
 }

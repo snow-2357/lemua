@@ -31,6 +31,15 @@ chapter text are saved in IndexedDB on this device. The reader currently
 displays extracted chapter text; original EPUB styling and images are not
 rendered.
 
+Chapter boundaries use the EPUB table of contents, including anchors when several
+chapters share one XHTML file. Sections follow the EPUB spine's reading order;
+readable files are not discarded just because the contents omits them. Without a
+table of contents, repeated top-level headings provide chapter boundaries.
+Short chapters and readable front/back matter are retained. Previously imported
+books are rebuilt from their saved EPUB when opened after a parser update, so no
+re-import is required. The old chapter's opening paragraph is used to relocate
+the reader where possible, with pagination restarting at that chapter's first page.
+
 ## On-device narration
 
 Open a book and press the play button in the reader's bottom audio card to read
@@ -55,3 +64,7 @@ phonemization. Speech is generated when playback starts and is not uploaded.
 npm run lint
 npm run build
 ```
+
+For browser-based EPUB regression tests, run the development server and open
+`/tests/epub.html`. The tests use the browser's real HTML/XML parsers and generated
+EPUB fixtures, including 135 chapters distributed across shared XHTML files.

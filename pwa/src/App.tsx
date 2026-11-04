@@ -12,6 +12,7 @@ import {
   persistLastRead,
   persistReadingPosition,
   persistSettings,
+  upgradeImportedBook,
 } from './settings'
 import type { EpubChapter, ImportedBook } from './types'
 import { getFileFingerprint } from './utils/fileFingerprint'
@@ -118,7 +119,15 @@ function App() {
     }
   }, [])
 
-  const openBook = (book: ImportedBook) => {
+  const openBook = async (savedBook: ImportedBook) => {
+    let book: ImportedBook
+    try {
+      book = await upgradeImportedBook(savedBook)
+    } catch (error) {
+      console.error('Could not rebuild the EPUB chapters.', error)
+      notify('Could not rebuild this book. Your saved copy was not changed.')
+      return
+    }
     window.scrollTo(0, 0)
     const bookChapters = readableChapters(book)
     const nextChapterIndex = Math.min(

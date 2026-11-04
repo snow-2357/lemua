@@ -1,0 +1,11 @@
+{
+  "installCommand": "npm --prefix pwa ci",
+  "buildCommand": "npm --prefix pwa run build",
+  "outputDirectory": "pwa/dist",
+  "rewrites": [
+    {
+      "source": "/(.*)",
+      "destination": "/index.html"
+    }
+  ]
+}

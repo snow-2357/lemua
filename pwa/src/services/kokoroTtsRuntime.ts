@@ -223,6 +223,16 @@ async function fetchBuffer(
   return completeBytes.buffer
 }
 
+export async function preloadKokoroAssets(
+  onProgress: (message: string) => void,
+): Promise<void> {
+  await Promise.all([
+    fetchBuffer(metadataUrl, 'settings', onProgress),
+    fetchBuffer(voicesUrl, 'voice pack', onProgress),
+    fetchBuffer(modelUrl, 'INT8 model', onProgress),
+  ])
+}
+
 function readAudioChunk(key: string): Promise<Blob | undefined> {
   return openNarrationDatabase().then(
     (database) =>

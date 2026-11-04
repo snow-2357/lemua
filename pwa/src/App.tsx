@@ -119,6 +119,14 @@ function App() {
     }
   }, [])
 
+  useEffect(() => {
+    void import('./services/kokoroTts')
+      .then(({ preloadKokoroAssets }) => preloadKokoroAssets())
+      .catch((error: unknown) => {
+        console.warn('Could not preload Kokoro files.', error)
+      })
+  }, [])
+
   const openBook = async (savedBook: ImportedBook) => {
     let book: ImportedBook
     try {

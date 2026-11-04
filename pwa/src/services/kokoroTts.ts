@@ -11,7 +11,7 @@ type NarrationSequence = {
 }
 
 type PendingRequest = {
-  resolve: (audio: Blob) => void
+  resolve: (audio?: Blob) => void
   reject: (error: Error) => void
   onProgress: (message: string) => void
   cleanup: () => void
@@ -21,6 +21,7 @@ let narrationDatabasePromise: Promise<IDBDatabase> | undefined
 let generationWorker: Worker | undefined
 let nextRequestId = 0
 const pendingRequests = new Map<number, PendingRequest>()
+let preloadPromise: Promise<void> | undefined
 
 function openNarrationDatabase(): Promise<IDBDatabase> {
   if (!narrationDatabasePromise) {
@@ -116,6 +117,7 @@ function getWorker(): Worker {
         pendingRequests.delete(response.id)
         pending.cleanup()
         if (response.type === 'result') pending.resolve(response.audio)
+        else if (response.type === 'ready') pending.resolve()
         else pending.reject(new Error(response.message))
       }
     }
@@ -132,6 +134,26 @@ function getWorker(): Worker {
     generationWorker = worker
   }
   return generationWorker
+}
+
+export function preloadKokoroAssets(): Promise<void> {
+  if (!preloadPromise) {
+    const id = ++nextRequestId
+    const worker = getWorker()
+    preloadPromise = new Promise<void>((resolve, reject) => {
+      pendingRequests.set(id, { resolve: () => resolve(), reject, onProgress: () => {}, cleanup: () => {} })
+      try {
+        worker.postMessage({ id, type: 'preload' } satisfies NarrationWorkerRequest)
+      } catch (error) {
+        pendingRequests.delete(id)
+        reject(error)
+      }
+    }).catch((error: unknown) => {
+      preloadPromise = undefined
+      throw error
+    })
+  }
+  return preloadPromise
 }
 
 function requestChunk(
@@ -151,7 +173,15 @@ function requestChunk(
       reject(signal.reason)
     }
     const cleanup = () => signal.removeEventListener('abort', abort)
-    pendingRequests.set(id, { resolve, reject, onProgress, cleanup })
+    pendingRequests.set(id, {
+      resolve: (audio) => {
+        if (audio) resolve(audio)
+        else reject(new Error('The narration worker returned no audio.'))
+      },
+      reject,
+      onProgress,
+      cleanup,
+    })
     signal.addEventListener('abort', abort, { once: true })
     try {
       worker.postMessage({ id, type: 'generate', key, text, speed } satisfies NarrationWorkerRequest)

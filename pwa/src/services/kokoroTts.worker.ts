@@ -1,7 +1,9 @@
-import { getOrGenerateNarrationChunk } from './kokoroTtsRuntime'
+import { getOrGenerateNarrationChunk, preloadKokoroAssets } from './kokoroTtsRuntime'
 import type { NarrationWorkerRequest } from './narrationWorkerTypes'
 
-let queue: Extract<NarrationWorkerRequest, { type: 'generate' }>[] = []
+type WorkRequest = Extract<NarrationWorkerRequest, { type: 'generate' | 'preload' }>
+
+let queue: WorkRequest[] = []
 let active: { id: number; abort: AbortController } | undefined
 
 self.addEventListener('message', (event: MessageEvent<NarrationWorkerRequest>) => {
@@ -23,14 +25,21 @@ async function drainQueue() {
     const abort = new AbortController()
     active = { id: request.id, abort }
     try {
-      const audio = await getOrGenerateNarrationChunk(
-        request.key,
-        request.text,
-        request.speed,
-        (message) => self.postMessage({ id: request.id, type: 'progress', message }),
-        abort.signal,
-      )
-      if (!abort.signal.aborted) self.postMessage({ id: request.id, type: 'result', audio })
+      const onProgress = (message: string) =>
+        self.postMessage({ id: request.id, type: 'progress', message })
+      if (request.type === 'preload') {
+        await preloadKokoroAssets(onProgress)
+        if (!abort.signal.aborted) self.postMessage({ id: request.id, type: 'ready' })
+      } else {
+        const audio = await getOrGenerateNarrationChunk(
+          request.key,
+          request.text,
+          request.speed,
+          onProgress,
+          abort.signal,
+        )
+        if (!abort.signal.aborted) self.postMessage({ id: request.id, type: 'result', audio })
+      }
     } catch (error) {
       if (!abort.signal.aborted) self.postMessage({
         id: request.id,

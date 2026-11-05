@@ -10,7 +10,6 @@ import {
   ActivityIndicator,
   Alert,
   FlatList,
-  Image,
   Modal,
   Pressable,
   Text,
@@ -26,7 +25,6 @@ import AudioPreviewScreen from './AudioPreviewScreen';
 import type {
   EpubDocument,
   ReaderChapter,
-  ReaderImage,
   TableOfContentsEntry,
 } from '../types/book';
 import { paginateChapterText } from '../utils/paginateChapterText';
@@ -64,7 +62,6 @@ type BookPage = {
   chapterIndex: number;
   chapterTitle: string;
   text: string;
-  image?: ReaderImage;
   isChapterStart: boolean;
   textStartOffset: number;
   textEndOffset: number;
@@ -201,28 +198,6 @@ export default function ReaderScreen({
           isChapterStart = false;
         }
       };
-
-      for (const image of chapter.images ?? []) {
-        const imageOffset = Math.min(
-          Math.max(image.textOffset, textOffset),
-          chapter.text.length,
-        );
-        addTextPages(
-          chapter.text.slice(textOffset, imageOffset),
-          textOffset,
-        );
-        allPages.push({
-          chapterIndex,
-          chapterTitle: chapter.title,
-          text: '',
-          image,
-          isChapterStart,
-          textStartOffset: imageOffset,
-          textEndOffset: imageOffset,
-        });
-        isChapterStart = false;
-        textOffset = imageOffset;
-      }
 
       addTextPages(chapter.text.slice(textOffset), textOffset);
       if (allPages.length === 0 || allPages[allPages.length - 1].chapterIndex !== chapterIndex) {
@@ -935,31 +910,9 @@ export default function ReaderScreen({
                   { width: pageSize.width, height: pageSize.height },
                 ]}
               >
-                {item.image ? (
-                  <View style={styles.illustrationContainer}>
-                    {item.image.uri ? (
-                      <Image
-                        accessibilityLabel={item.image.alt || 'Book illustration'}
-                        resizeMode="contain"
-                        source={{ uri: item.image.uri }}
-                        style={styles.illustration}
-                      />
-                    ) : (
-                      <Text style={[styles.imageCaption, { color: colors.mutedText }]}>
-                        {item.image.alt || 'Image unavailable'}
-                      </Text>
-                    )}
-                    {item.image.uri && item.image.alt ? (
-                      <Text style={[styles.imageCaption, { color: colors.mutedText }]}>
-                        {item.image.alt}
-                      </Text>
-                    ) : null}
-                  </View>
-                ) : (
-                  <Text style={[styles.chapterText, { color: colors.secondaryText }]}>
-                    {item.text}
-                  </Text>
-                )}
+                <Text style={[styles.chapterText, { color: colors.secondaryText }]}>
+                  {item.text}
+                </Text>
               </View>
             )}
             showsHorizontalScrollIndicator={false}

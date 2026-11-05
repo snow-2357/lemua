@@ -3,13 +3,19 @@ import * as FileSystem from 'expo-file-system/legacy';
 import { NativeModules } from 'react-native';
 import type { OpenPhonemizer } from 'expo-open-phonemizer';
 import type { InferenceSession } from 'onnxruntime-react-native';
-import kokoroModel from '../../assets/kokoro/kokoro_mobile_int8.onnx';
-import kokoroWarmVoice from '../../assets/kokoro/tone_warm.npy';
-import metadata from '../../assets/kokoro/kokoro_metadata.json';
 
+const bundleBaseUrl =
+  'https://huggingface.co/snow2357/koroko_int8/resolve/main/mobile_bundle'
+const modelUrl = `${bundleBaseUrl}/kokoro_mobile_int8.onnx`
+const voicesUrl = `${bundleBaseUrl}/voices_mobile.bin`
+const metadataUrl = `${bundleBaseUrl}/kokoro_metadata.json`
 const SAMPLE_RATE = 24000;
 const STYLE_DIMENSION = 256;
 const MAX_PHONEME_COUNT = 508;
+
+type Metadata = {
+  tokenizer_vocab: Record<string, number>
+}
 
 type KokoroResources = {
   onnxRuntime: typeof import('onnxruntime-react-native');
@@ -17,7 +23,8 @@ type KokoroResources = {
   phonemizer: OpenPhonemizer;
 };
 
-const tokenizerVocabulary = metadata.tokenizer_vocab as Record<string, number>;
+let metadata: Metadata | null = null
+const tokenizerVocabulary: Record<string, number> = {};
 let resourcesPromise: Promise<KokoroResources> | null = null;
 let voiceData: Float32Array | null = null;
 let voiceLoadPromise: Promise<Float32Array> | null = null;
@@ -74,12 +81,51 @@ function assertOnnxNativeModuleAvailable(): void {
   }
 }
 
-async function loadAssetUri(moduleId: number): Promise<string> {
-  const asset = Asset.fromModule(moduleId);
-  if (!asset.localUri) await asset.downloadAsync();
-  const uri = asset.localUri;
-  if (!uri) throw new Error(`Could not load the local asset ${asset.name}.${asset.type}.`);
-  return uri;
+async function downloadFromUrl(url: string, cacheDir: string, fileName: string): Promise<string> {
+  const filePath = `${cacheDir}${fileName}`
+  const fileInfo = await FileSystem.getInfoAsync(filePath)
+  
+  if (fileInfo.exists) {
+    return filePath
+  }
+
+  const downloadResumable = FileSystem.createDownloadResumable(
+    url,
+    filePath,
+    {}
+  )
+
+  try {
+    const result = await downloadResumable.downloadAsync()
+    if (!result) {
+      throw new Error(`Failed to download ${fileName} from ${url}`)
+    }
+    return result.uri
+  } catch (error) {
+    throw new Error(`Could not download ${fileName}: ${error instanceof Error ? error.message : 'Unknown error'}`)
+  }
+}
+
+async function loadMetadata(): Promise<Metadata> {
+  if (metadata) return metadata
+  
+  const cacheDir = FileSystem.cacheDirectory || FileSystem.documentDirectory
+  if (!cacheDir) throw new Error('Cache directory is not available')
+  
+  const metadataPath = await downloadFromUrl(metadataUrl, cacheDir, 'kokoro_metadata.json')
+  const content = await FileSystem.readAsStringAsync(metadataPath)
+  metadata = JSON.parse(content) as Metadata
+  
+  // Populate tokenizer vocabulary
+  Object.assign(tokenizerVocabulary, metadata.tokenizer_vocab)
+  
+  return metadata
+}
+
+async function loadAssetUri(url: string, fileName: string): Promise<string> {
+  const cacheDir = FileSystem.cacheDirectory || FileSystem.documentDirectory
+  if (!cacheDir) throw new Error('Cache directory is not available')
+  return downloadFromUrl(url, cacheDir, fileName)
 }
 
 async function loadResources(): Promise<KokoroResources> {
@@ -106,7 +152,8 @@ async function loadResources(): Promise<KokoroResources> {
     );
   }
 
-  const modelUri = await loadAssetUri(kokoroModel);
+  await loadMetadata()
+  const modelUri = await loadAssetUri(modelUrl, 'kokoro_mobile_int8.onnx');
   const session = await onnxRuntime.InferenceSession.create(modelUri, {
     executionProviders: ['cpu'],
     graphOptimizationLevel: 'all',
@@ -168,7 +215,7 @@ async function loadVoiceData(): Promise<Float32Array> {
   if (voiceData) return voiceData;
   if (!voiceLoadPromise) {
     voiceLoadPromise = (async () => {
-      const uri = await loadAssetUri(kokoroWarmVoice);
+      const uri = await loadAssetUri(voicesUrl, 'voices_mobile.bin');
       const response = await fetch(uri);
       if (!response.ok) {
         throw new Error(`Could not read the Kokoro voice data (${response.status}).`);

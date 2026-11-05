@@ -1,1 +1,0 @@
-Removed the rokoro int8 from here so that it can be included in the git repo. But the model is still too big so the repo size will increase.

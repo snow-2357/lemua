@@ -93,22 +93,6 @@ export const readerStyles = StyleSheet.create({
     lineHeight: 26,
     paddingBottom: 20,
   },
-  illustrationContainer: {
-    alignItems: 'center',
-    flex: 1,
-    justifyContent: 'center',
-  },
-  illustration: {
-    flex: 1,
-    width: '100%',
-  },
-  imageCaption: {
-    fontFamily: 'Georgia',
-    fontSize: 12,
-    fontStyle: 'italic',
-    marginTop: 8,
-    textAlign: 'center',
-  },
   footer: {
     paddingHorizontal: 20,
     paddingBottom: 14,

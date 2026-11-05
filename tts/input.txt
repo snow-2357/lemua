@@ -1,4 +1,4 @@
-Exactly 😂 That's a real UX problem. Imagine a customer sees ₹100, spends 5 minutes filling in their details, and suddenly you tell them it's ₹150. They'll be pissed.
+Exactly That's a real UX problem. Imagine a customer sees ₹100, spends 5 minutes filling in their details, and suddenly you tell them it's ₹150. They'll be pissed.
 
 But you don't have to choose between correctness and user experience.
 

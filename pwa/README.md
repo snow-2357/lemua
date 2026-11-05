@@ -102,6 +102,11 @@ highlight control as unavailable; reading and narration still work.
   resizing. Verify synchronization and on-device performance while preserving
   natural narration, audio caching, and background prefetch; do not use guessed
   line timings.
+- [ ] Implement word-level highlighting during playback: highlight only the 3–4
+  words currently being spoken, updating in real time as audio plays. Requires
+  word-level timestamps from Kokoro synthesis (not available in current inference
+  pipeline). This would provide precise reading guidance while keeping UI clutter
+  minimal, unlike passage-level highlighting which marks entire 120–200 word chunks.
 
 ## Checks
 

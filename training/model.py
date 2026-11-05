@@ -1,102 +1,89 @@
-import math
-
 import torch
 import torch.nn as nn
-from torch.nn.utils.rnn import pack_padded_sequence, pad_packed_sequence
+from torch.nn.utils.rnn import pack_padded_sequence, pad_packed_sequence, pad_sequence
+
+
+def _run_lstm(lstm, inputs, lengths):
+    packed = pack_padded_sequence(
+        inputs, lengths.cpu(), batch_first=True, enforce_sorted=False
+    )
+    outputs, _ = lstm(packed)
+    outputs, _ = pad_packed_sequence(
+        outputs, batch_first=True, total_length=inputs.size(1)
+    )
+    return outputs
 
 
 class TTSStudentModel(nn.Module):
-    """Predicts a teacher mel spectrogram from eSpeak phoneme symbols."""
+    """FastSpeech-style student: phonemes -> per-phoneme durations -> mel frames."""
 
     def __init__(self, vocab_size=10000, hidden_dim=256, max_frames=1600):
         super().__init__()
         if hidden_dim % 2:
-            raise ValueError("hidden_dim must be even for the bidirectional encoder.")
+            raise ValueError("hidden_dim must be even for the bidirectional LSTMs.")
 
         self.vocab_size = vocab_size
         self.hidden_dim = hidden_dim
         self.max_frames = max_frames
         self.embedding = nn.Embedding(vocab_size, hidden_dim, padding_idx=0)
         self.encoder = nn.LSTM(
-            input_size=hidden_dim,
-            hidden_size=hidden_dim // 2,
-            num_layers=2,
-            batch_first=True,
-            bidirectional=True,
+            hidden_dim, hidden_dim // 2, num_layers=2, batch_first=True, bidirectional=True
         )
-        decoder_layer = nn.TransformerDecoderLayer(
-            d_model=hidden_dim,
-            nhead=4,
-            dim_feedforward=hidden_dim * 4,
-            dropout=0.1,
-            batch_first=True,
-        )
-        self.decoder = nn.TransformerDecoder(decoder_layer, num_layers=2)
-        self.register_buffer(
-            "relative_frequencies",
-            math.pi * torch.logspace(0, 10, hidden_dim // 2, base=2.0),
-            persistent=False,
-        )
-        self.query_projection = nn.Linear(hidden_dim, hidden_dim)
-        self.mel_head = nn.Linear(hidden_dim, 80)
-        self.length_head = nn.Sequential(
-            nn.Linear(hidden_dim, hidden_dim // 2),
+        self.duration_head = nn.Sequential(
+            nn.Linear(hidden_dim, hidden_dim),
             nn.ReLU(),
-            nn.Linear(hidden_dim // 2, 1),
+            nn.Dropout(0.1),
+            nn.Linear(hidden_dim, 1),
         )
+        self.frame_position = nn.Linear(1, hidden_dim)
+        self.decoder = nn.LSTM(
+            hidden_dim, hidden_dim // 2, num_layers=2, batch_first=True, bidirectional=True
+        )
+        self.mel_head = nn.Linear(hidden_dim, 80)
 
-    def _relative_encoding(self, lengths, size):
-        # Position as a fraction of each sample's own length, so frames can align to tokens.
-        positions = torch.arange(size, device=lengths.device, dtype=torch.float32)
-        relative = positions.unsqueeze(0) / lengths.clamp(min=1).unsqueeze(1).float()
-        angles = relative.unsqueeze(-1) * self.relative_frequencies
-        return torch.cat([angles.sin(), angles.cos()], dim=-1)
-
-    def forward(self, tokens, max_frames, frame_lengths=None):
+    def encode(self, tokens):
         if tokens.ndim != 2 or tokens.size(1) == 0:
             raise ValueError("tokens must have shape (batch, non-empty sequence).")
-        if max_frames < 1 or max_frames > self.max_frames:
-            raise ValueError(f"max_frames must be between 1 and {self.max_frames}.")
-        if frame_lengths is not None:
-            if frame_lengths.ndim != 1 or frame_lengths.size(0) != tokens.size(0):
-                raise ValueError("frame_lengths must have shape (batch,).")
-            if torch.any(frame_lengths < 1) or torch.any(frame_lengths > max_frames):
-                raise ValueError("frame_lengths must be between 1 and max_frames.")
-
-        token_mask = tokens.eq(0)
-        token_lengths = (~token_mask).sum(dim=1)
+        token_mask = tokens.ne(0)
+        token_lengths = token_mask.sum(dim=1)
         if torch.any(token_lengths == 0):
             raise ValueError("Each input must contain at least one non-padding token.")
 
-        embedded = self.embedding(tokens)
-        packed = pack_padded_sequence(
-            embedded,
-            token_lengths.cpu(),
-            batch_first=True,
-            enforce_sorted=False,
-        )
-        encoded, _ = self.encoder(packed)
-        encoded, _ = pad_packed_sequence(
-            encoded, batch_first=True, total_length=tokens.size(1)
-        )
+        encoded = _run_lstm(self.encoder, self.embedding(tokens), token_lengths)
+        log_durations = self.duration_head(encoded).squeeze(-1).masked_fill(~token_mask, 0.0)
+        return encoded, log_durations
 
-        valid_tokens = (~token_mask).unsqueeze(-1)
-        pooled = (encoded * valid_tokens).sum(dim=1) / token_lengths.unsqueeze(-1)
-        log_frame_count = self.length_head(pooled).squeeze(-1)
+    def predict_durations(self, tokens, log_durations, speed=1.0):
+        token_mask = tokens.ne(0)
+        durations = (torch.expm1(log_durations) / speed).round().clamp(min=0).long()
+        durations = durations.masked_fill(~token_mask, 0)
+        empty = durations.sum(dim=1) == 0
+        durations[empty] = token_mask[empty].long()
+        return durations
 
-        if frame_lengths is None:
-            frame_lengths = torch.full(
-                (tokens.size(0),), max_frames, device=tokens.device, dtype=torch.long
+    def decode(self, encoded, durations):
+        frame_lengths = durations.sum(dim=1)
+        if torch.any(frame_lengths < 1) or torch.any(frame_lengths > self.max_frames):
+            raise ValueError(f"Total frames must be between 1 and {self.max_frames}.")
+
+        expanded = []
+        for sample_encoded, sample_durations in zip(encoded, durations):
+            token_index = torch.repeat_interleave(
+                torch.arange(sample_durations.numel(), device=durations.device),
+                sample_durations,
             )
-        positions = torch.arange(max_frames, device=tokens.device)
-        frame_padding_mask = positions.unsqueeze(0) >= frame_lengths.unsqueeze(1)
-        frame_encoding = self._relative_encoding(frame_lengths, max_frames)
-        queries = self.query_projection(frame_encoding)
-        memory = encoded + self._relative_encoding(token_lengths, tokens.size(1))
-        decoded = self.decoder(
-            tgt=queries + frame_encoding,
-            memory=memory,
-            memory_key_padding_mask=token_mask,
-            tgt_key_padding_mask=frame_padding_mask,
-        )
-        return self.mel_head(decoded), log_frame_count
+            starts = torch.cumsum(sample_durations, dim=0) - sample_durations
+            offset = torch.arange(token_index.numel(), device=durations.device) - starts[token_index]
+            # Where each frame sits inside its phoneme (0..1), so stretched copies differ.
+            fraction = (offset.float() + 0.5) / sample_durations[token_index].float()
+            expanded.append(
+                sample_encoded[token_index] + self.frame_position(fraction.unsqueeze(-1))
+            )
+        frames = pad_sequence(expanded, batch_first=True)
+        decoded = _run_lstm(self.decoder, frames, frame_lengths)
+        return self.mel_head(decoded), frame_lengths
+
+    def forward(self, tokens, durations):
+        encoded, log_durations = self.encode(tokens)
+        mels, frame_lengths = self.decode(encoded, durations)
+        return mels, log_durations, frame_lengths

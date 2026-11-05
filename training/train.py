@@ -20,58 +20,53 @@ MAX_FRAMES = 1600
 BATCH_SIZE = 8
 NUM_WORKERS = 2
 DEFAULT_EPOCHS = 100
-CHECKPOINT_FORMAT_VERSION = 5
-INPUT_ENCODING = "espeak_ipa_codepoint"
+CHECKPOINT_FORMAT_VERSION = 6
+INPUT_ENCODING = "kokoro_misaki_codepoint"
 
 
 def tts_collate_fn(batch):
     tokens = pad_sequence(
         [item["tokens"] for item in batch], batch_first=True, padding_value=0
     )
+    durations = pad_sequence(
+        [item["durations"] for item in batch], batch_first=True, padding_value=0
+    )
     mels = pad_sequence(
         [item["mel"] for item in batch], batch_first=True, padding_value=0.0
     )
-    frame_lengths = torch.tensor([item["mel"].size(0) for item in batch])
-    return tokens, mels, frame_lengths
+    return tokens, durations, mels
+
+
+def compute_losses(model, tokens, durations, target_mels):
+    predicted_mels, log_durations, frame_lengths = model(tokens, durations)
+    frame_mask = (
+        torch.arange(target_mels.size(1), device=tokens.device).unsqueeze(0)
+        < frame_lengths.unsqueeze(1)
+    )
+    token_mask = tokens.ne(0)
+    mel_loss = F.l1_loss(predicted_mels[frame_mask], target_mels[frame_mask])
+    duration_loss = F.mse_loss(
+        log_durations[token_mask], torch.log1p(durations[token_mask].float())
+    )
+    return mel_loss, duration_loss
 
 
 def evaluate(model, dataloader, device):
     model.eval()
     mel_error = 0.0
-    frame_count_total = 0
-    length_error = 0.0
-    sample_count = 0
+    duration_error = 0.0
+    batch_count = 0
 
     with torch.inference_mode():
-        for tokens, target_mels, frame_lengths in dataloader:
-            tokens = tokens.to(device)
-            target_mels = target_mels.to(device)
-            frame_lengths = frame_lengths.to(device)
-            frame_count = target_mels.size(1)
-            if frame_count > MAX_FRAMES:
-                raise ValueError(
-                    f"Audio needs {frame_count} mel frames; increase MAX_FRAMES."
-                )
-
-            predicted_mels, predicted_log_lengths = model(
-                tokens, frame_count, frame_lengths
+        for tokens, durations, target_mels in dataloader:
+            mel_loss, duration_loss = compute_losses(
+                model, tokens.to(device), durations.to(device), target_mels.to(device)
             )
-            frame_mask = (
-                torch.arange(frame_count, device=device).unsqueeze(0)
-                < frame_lengths.unsqueeze(1)
-            )
-            mel_error += F.l1_loss(
-                predicted_mels[frame_mask], target_mels[frame_mask], reduction="sum"
-            ).item()
-            frame_count_total += int(frame_mask.sum().item()) * target_mels.size(2)
-            length_error += F.mse_loss(
-                predicted_log_lengths,
-                torch.log1p(frame_lengths.float()),
-                reduction="sum",
-            ).item()
-            sample_count += tokens.size(0)
+            mel_error += mel_loss.item()
+            duration_error += duration_loss.item()
+            batch_count += 1
 
-    return mel_error / frame_count_total, length_error / sample_count
+    return mel_error / batch_count, duration_error / batch_count
 
 
 def save_checkpoint(
@@ -111,7 +106,7 @@ def save_checkpoint(
 
 def main():
     parser = argparse.ArgumentParser(
-        description="Train the eSpeak-phoneme-to-mel student on cached speech audio."
+        description="Train the duration-based phoneme-to-mel student on cached Kokoro audio."
     )
     parser.add_argument(
         "--epochs",
@@ -172,7 +167,7 @@ def main():
     model = TTSStudentModel(
         vocab_size=VOCAB_SIZE, hidden_dim=HIDDEN_DIM, max_frames=MAX_FRAMES
     ).to(device)
-    optimizer = torch.optim.AdamW(model.parameters(), lr=1e-4)
+    optimizer = torch.optim.AdamW(model.parameters(), lr=1e-3)
     scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(
         optimizer, mode="min", factor=0.5, patience=5
     )
@@ -216,9 +211,9 @@ def main():
             )
         else:
             raise RuntimeError(
-                "Existing checkpoint is incompatible with eSpeak phoneme input. "
+                "Existing checkpoint is from an older model version. "
                 "Run `python train.py --restart` to start the "
-                "phoneme-to-mel student from fresh weights."
+                "duration-based student from fresh weights."
             )
 
     current_mel_error, current_length_error = evaluate(
@@ -232,7 +227,7 @@ def main():
         best_mel_error = current_mel_error
     print(
         f"Starting validation: mel L1={current_mel_error:.4f}, "
-        f"length MSE={current_length_error:.4f}"
+        f"duration MSE={current_length_error:.4f}"
     )
 
     if start_epoch:
@@ -245,30 +240,14 @@ def main():
         model.train()
         train_loss_total = 0.0
 
-        for tokens, target_mels, frame_lengths in train_loader:
-            tokens = tokens.to(device, non_blocking=True)
-            target_mels = target_mels.to(device, non_blocking=True)
-            frame_lengths = frame_lengths.to(device, non_blocking=True)
-            frame_count = target_mels.size(1)
-            if frame_count > MAX_FRAMES:
-                raise ValueError(
-                    f"Audio needs {frame_count} mel frames; increase MAX_FRAMES."
-                )
-
-            predicted_mels, predicted_log_lengths = model(
-                tokens, frame_count, frame_lengths
+        for tokens, durations, target_mels in train_loader:
+            mel_loss, duration_loss = compute_losses(
+                model,
+                tokens.to(device, non_blocking=True),
+                durations.to(device, non_blocking=True),
+                target_mels.to(device, non_blocking=True),
             )
-            frame_mask = (
-                torch.arange(frame_count, device=device).unsqueeze(0)
-                < frame_lengths.unsqueeze(1)
-            )
-            mel_loss = F.l1_loss(
-                predicted_mels[frame_mask], target_mels[frame_mask]
-            )
-            length_loss = F.mse_loss(
-                predicted_log_lengths, torch.log1p(frame_lengths.float())
-            )
-            loss = mel_loss + 0.1 * length_loss
+            loss = mel_loss + duration_loss
 
             optimizer.zero_grad(set_to_none=True)
             loss.backward()
@@ -279,13 +258,13 @@ def main():
         validation_mel_error, validation_length_error = evaluate(
             model, validation_loader, device
         )
-        validation_loss = validation_mel_error + 0.1 * validation_length_error
+        validation_loss = validation_mel_error + validation_length_error
         scheduler.step(validation_loss)
         print(
             f"Epoch {epoch} (run {epoch - start_epoch}/{args.epochs}) | "
             f"Train loss: {train_loss_total / len(train_loader):.4f} | "
             f"Validation mel L1: {validation_mel_error:.4f} | "
-            f"Validation length MSE: {validation_length_error:.4f}"
+            f"Validation duration MSE: {validation_length_error:.4f}"
         )
 
         if validation_loss < best_validation_loss:

@@ -159,9 +159,8 @@ export default function ReaderBottom({
           <span>
             <small>KOKORO · WARM TONE</small>
             <strong>
-              {snapshot.state === 'playing' ? 'Listening to this chapter'
-                : busy ? 'Preparing narration in the background'
-                  : snapshot.state === 'paused' ? 'Narration paused' : 'Listen to this chapter'}
+              {snapshot.state === 'playing' ? 'Listening'
+                : snapshot.state === 'paused' ? 'Paused' : 'Listen to chapter'}
             </strong>
           </span>
           <div className="audio-actions">
@@ -170,22 +169,25 @@ export default function ReaderBottom({
                 <span className="stop-glyph" aria-hidden="true" />
               </button>
             )}
-            <button
-              type="button"
-              className="audio-play"
-              onClick={togglePlayback}
-              disabled={chunks.length === 0 && !active}
-              aria-label={canPause ? 'Pause narration' : snapshot.state === 'paused' ? 'Resume narration' : 'Read this chapter aloud'}
-            >
-              {canPause ? <span className="pause-glyph" aria-hidden="true">Ⅱ</span> : <Icon name="play" size={16} />}
-            </button>
+            <div className="audio-button-wrapper">
+              {busy && <div className="audio-loader" aria-hidden="true" />}
+              <button
+                type="button"
+                className="audio-play"
+                onClick={togglePlayback}
+                disabled={chunks.length === 0 && !active}
+                aria-label={canPause ? 'Pause narration' : snapshot.state === 'paused' ? 'Resume narration' : 'Read this chapter aloud'}
+              >
+                {canPause ? <span className="pause-glyph" aria-hidden="true">Ⅱ</span> : <Icon name="play" size={16} />}
+              </button>
+            </div>
           </div>
         </div>
         <Waveform progress={snapshot.duration > 0 ? snapshot.currentTime / snapshot.duration : 0} />
         <div className="audio-compact-meta">
           <span>{formatTime(snapshot.currentTime)}</span>
-          <span role={snapshot.error ? 'alert' : 'status'}>{snapshot.error || snapshot.message}</span>
-          <span title="Estimated listening time">{snapshot.duration > 0 ? `~${formatTime(snapshot.duration)}` : '--:--'}</span>
+          <span role={snapshot.error ? 'alert' : 'status'} className="audio-message">{snapshot.error || snapshot.message}</span>
+          <span title="Estimated listening time" className="audio-duration">{snapshot.duration > 0 ? `~${formatTime(snapshot.duration)}` : '--:--'}</span>
         </div>
         <div className="audio-options">
           <button type="button" className="audio-follow" aria-pressed={followText} onClick={() => setFollowText(!followText)}>
@@ -206,7 +208,6 @@ export default function ReaderBottom({
               Highlight text: {highlightSupported ? highlightText ? 'on' : 'off' : 'unavailable'}
             </button>
           )}
-          {busy && <span className="audio-loading-note">Keep reading · controls stay available</span>}
         </div>
       </div>
       <div className="reader-progress">

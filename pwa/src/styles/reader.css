@@ -200,7 +200,7 @@
   border-radius: 14px;
   color: var(--ink);
   display: block;
-  padding: 13px 15px 10px;
+  padding: 10px 15px 8px;
   text-align: left;
   width: 100%;
 }
@@ -208,7 +208,7 @@
 .audio-compact-top {
   align-items: center;
   display: flex;
-  gap: 12px;
+  gap: 10px;
   justify-content: space-between;
 }
 
@@ -225,13 +225,15 @@
   font-size: 7px;
   font-weight: 700;
   letter-spacing: 1px;
+  margin-bottom: 1px;
 }
 
 .audio-compact-top strong {
   color: var(--ink);
   font-family: Georgia, 'Times New Roman', serif;
-  font-size: 13px;
+  font-size: 12px;
   font-weight: 400;
+  line-height: 1.2;
 }
 
 .audio-play,
@@ -243,11 +245,39 @@
   color: var(--accent-contrast);
   display: flex;
   justify-content: center;
+  position: relative;
 }
 
 .audio-play {
-  height: 44px;
-  width: 44px;
+  height: 38px;
+  width: 38px;
+}
+
+.audio-button-wrapper {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.audio-loader {
+  position: absolute;
+  width: 42px;
+  height: 42px;
+  border: 2px solid rgba(0, 0, 0, 0.1);
+  border-top: 2px solid var(--accent);
+  border-radius: 50%;
+  animation: spin 0.8s linear infinite;
+  pointer-events: none;
+}
+
+.theme-dark .audio-loader {
+  border: 2px solid rgba(255, 255, 255, 0.1);
+  border-top: 2px solid var(--accent);
+}
+
+@keyframes spin {
+  to { transform: rotate(360deg); }
 }
 
 .audio-play:disabled {
@@ -273,9 +303,9 @@
   border-radius: 50%;
   color: var(--ink);
   display: flex;
-  height: 44px;
+  height: 38px;
   justify-content: center;
-  width: 44px;
+  width: 38px;
 }
 
 .stop-glyph {
@@ -288,7 +318,8 @@
 .audio-options {
   flex-wrap: wrap;
   justify-content: space-between;
-  margin-top: 8px;
+  margin-top: 6px;
+  gap: 6px;
 }
 
 .audio-follow {
@@ -296,9 +327,9 @@
   border: 1px solid var(--line);
   border-radius: 12px;
   color: var(--ink-muted);
-  font-size: 11px;
-  min-height: 32px;
-  padding: 4px 10px;
+  font-size: 10px;
+  min-height: 28px;
+  padding: 3px 9px;
 }
 
 .audio-follow[aria-pressed='true'] {
@@ -349,8 +380,8 @@
 }
 
 .audio-compact .waveform {
-  height: 27px;
-  margin-top: 8px;
+  height: 22px;
+  margin-top: 6px;
 }
 
 .audio-compact .wave-bar {
@@ -363,20 +394,25 @@
   display: flex;
   font-size: 8px;
   justify-content: space-between;
+  align-items: center;
+  gap: 6px;
+  margin-top: 3px;
 }
 
-.audio-compact-meta {
-  align-items: flex-start;
-  font-size: 10px;
-  gap: 8px;
-  line-height: 1.45;
-  margin-top: 4px;
-}
-
-.audio-compact-meta > span:nth-child(2) {
+.audio-message {
   flex: 1;
-  overflow-wrap: anywhere;
   text-align: center;
+  font-size: 8px;
+  line-height: 1.3;
+  min-height: 0;
+  max-height: 2.6em;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.audio-duration {
+  font-size: 8px;
+  white-space: nowrap;
 }
 
 .reader-progress {

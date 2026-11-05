@@ -243,11 +243,16 @@ async function loadVoiceData(): Promise<Float32Array> {
   if (!voiceLoadPromise) {
     voiceLoadPromise = (async () => {
       const uri = await loadAssetUri(voicesUrl, 'voices_mobile.bin');
-      const response = await fetch(uri);
-      if (!response.ok) {
-        throw new Error(`Could not read the Kokoro voice data (${response.status}).`);
+      // Read file directly from filesystem instead of using fetch
+      const base64Data = await FileSystem.readAsStringAsync(uri, {
+        encoding: FileSystem.EncodingType.Base64,
+      });
+      const binaryString = atob(base64Data);
+      const bytes = new Uint8Array(binaryString.length);
+      for (let i = 0; i < binaryString.length; i++) {
+        bytes[i] = binaryString.charCodeAt(i);
       }
-      return readNumpyFloatArray(new Uint8Array(await response.arrayBuffer()));
+      return readNumpyFloatArray(bytes);
     })();
   }
 

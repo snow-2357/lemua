@@ -1,3 +1,4 @@
+import './readableStreamPolyfill'
 import { getOrGenerateNarrationChunk, preloadKokoroAssets } from './kokoroTtsRuntime'
 import type { NarrationWorkerRequest } from './narrationWorkerTypes'
 

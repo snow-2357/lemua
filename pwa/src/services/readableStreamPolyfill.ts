@@ -1,10 +1,13 @@
 // Safari lacks ReadableStream async iteration, which the phonemizer package uses on load.
-const streamPrototype = ReadableStream.prototype as ReadableStream & {
-  [Symbol.asyncIterator]?: () => AsyncIterableIterator<unknown>
-}
+const streamPrototype = ReadableStream.prototype as unknown as Record<
+  symbol,
+  unknown
+>
 
 if (typeof streamPrototype[Symbol.asyncIterator] !== 'function') {
-  streamPrototype[Symbol.asyncIterator] = async function* (this: ReadableStream) {
+  streamPrototype[Symbol.asyncIterator] = async function* (
+    this: ReadableStream<unknown>,
+  ) {
     const reader = this.getReader()
     try {
       while (true) {

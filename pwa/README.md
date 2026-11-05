@@ -51,7 +51,7 @@ Text is grouped into sentence-aware passages, with a shorter opening
 passage to reduce startup time and larger subsequent passages for natural phrasing.
 Speech inference runs in a Web Worker so model execution does not block the
 reader. Audio is scheduled on a continuous Web Audio timeline while a single
-background producer prepares more. Lookahead adapts to generation time (20–60
+background producer prepares more. Lookahead adapts to generation time (up to 180
 seconds, capped at four decoded passages); cached audio bypasses the worker queue.
 Generated passages are saved in IndexedDB using text/voice/speed keys and reused
 independently of pagination or chapter position. Inference runs
@@ -68,12 +68,13 @@ passage and up to four following passages in the background. Speech is not uploa
 First-use download/model startup and devices that cannot synthesize faster than
 playback can still cause waiting; the card reports loading/buffering without
 covering or disabling the reader. Pause and stop remain available during loading.
-The opening passage is about 40 words; later passages grow to at most 60 words.
-Playback waits for at least five seconds of decoded audio and adapts that startup
-lead to 1.5 times the measured generation time, capped by the four-passage memory
-limit. The worker keeps generating while scheduled audio plays. This reserve helps
-smooth handoffs, but cannot eliminate pauses when inference is consistently slower
-than playback.
+Passages are larger than before (opening ~120 words, subsequent ~200 words) to
+reduce generation frequency and smooth audio transitions. Playback waits for at least
+eight seconds of decoded audio and adapts that startup lead to 1.5 times the measured
+generation time, capped by the four-passage memory limit. The worker keeps generating
+while scheduled audio plays, with aggressive lookahead (up to 180 seconds) to prefetch
+far ahead and hide generation latency. This combination helps eliminate most pauses
+even on slower devices.
 Pausing stops playback but continues saving approximately the next 1,000 words
 from the paused passage (or to chapter end). The final passage is completed rather
 than split mid-sentence, so the word count can slightly exceed 1,000. This larger

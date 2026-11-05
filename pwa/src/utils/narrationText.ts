@@ -59,7 +59,10 @@ export function createNarrationChunks(
       let remaining = sentence.segment.trim()
       let offset = sentence.index + sentence.segment.length - sentence.segment.trimStart().length
       while (remaining) {
-        const targetWords = Math.min(60, 40 + passages.length * 10)
+        // Larger passages = fewer generation cycles, smoother playback.
+        // First passage: 80–120 words (~640–960 chars). Subsequent: 120–200 words (~960–1600 chars).
+        const passageCount = passages.length
+        const targetWords = passageCount === 0 ? Math.min(120, 80 + 40) : Math.min(200, 120 + 80)
         const maxCharacters = targetWords * 8
         const words = Array.from(remaining.matchAll(/\S+/g))
         const wordEnd = words.length > targetWords

@@ -40,7 +40,8 @@ type ReadyPassage = {
 }
 
 export const pausedNarrationWordLimit = 1000
-const startupBufferSeconds = 5
+const startupBufferSeconds = 8
+const maxLookaheadSeconds = 180
 
 export const initialNarrationSnapshot: NarrationSnapshot = {
   state: 'idle',
@@ -97,7 +98,7 @@ export class NarrationPlayer {
   private pausedGenerationAbort: AbortController | undefined
   private completedSeconds = 0
   private decodedSeconds = 0
-  private lookaheadSeconds = 24
+  private lookaheadSeconds = 60
   private startupBufferTargetSeconds = startupBufferSeconds
   private remainingWords: number[]
   private generatedWords = 0
@@ -357,7 +358,12 @@ export class NarrationPlayer {
           startupBufferSeconds,
           generationSeconds * 1.5,
         )
-        this.lookaheadSeconds = Math.max(20, Math.min(60, generationSeconds * 3 + 12))
+        // Aggressive lookahead: aim for at least 3-4 passages ahead, with ~30s safety margin.
+        // maxLookaheadSeconds (180s) ensures we don't over-prefetch on fast devices.
+        this.lookaheadSeconds = Math.max(
+          Math.min(90, generationSeconds * 4 + 30),
+          Math.min(maxLookaheadSeconds, generationSeconds * 6 + 45),
+        )
         this.ready.push({ index, audio: decoded })
         this.decodedSeconds += decoded.duration
         this.generatedWords += this.remainingWords[index] - this.remainingWords[index + 1]

@@ -116,7 +116,7 @@ class TTSTeacherDataset(Dataset):
             self.durations.append(durations)
 
         if skipped:
-            print(f"Skipped {skipped} incomplete, mismatched, or too-long samples.")
+            print(f"Skipped {skipped} incomplete, empty, or too-long samples.")
         if not self.sentence_dirs:
             raise ValueError(
                 f"No usable sentence folders found in {self.cache_dir}. "

@@ -11,7 +11,9 @@ CHECKPOINT_PATH = TRAINING_DIR / "tts_student_model.pth"
 
 # Official HiFi-GAN repo (git clone https://github.com/jik876/hifi-gan)
 VOCODER_DIR = TRAINING_DIR / "hifi-gan"
-VOCODER_CKPT = TRAINING_DIR / "generator_v3"
+VOCODER_VERSION = "v1"  # "v3" is smaller and faster, but lower quality
+VOCODER_CKPT = TRAINING_DIR / f"generator_{VOCODER_VERSION}"
+VOCODER_CONFIG = VOCODER_DIR / f"config_{VOCODER_VERSION}.json"
 VOCODER_SAMPLE_RATE = 22050
 LOG_MEL_FLOOR = -11.5129  # log(1e-5), the floor used when the mels were made
 
@@ -48,7 +50,7 @@ def load_student(device):
 
 
 def load_vocoder(device):
-    with open(VOCODER_DIR / "config_v3.json", encoding="utf-8") as f:
+    with open(VOCODER_CONFIG, encoding="utf-8") as f:
         h = AttrDict(json.load(f))
     generator = Generator(h).to(device)
     state = torch.load(VOCODER_CKPT, map_location=device, weights_only=True)
@@ -63,7 +65,7 @@ def synthesize(text, output_path, speed=1.0):
     model = load_student(device)
     vocoder = load_vocoder(device)
     tokens = torch.tensor(
-        [chunk_token_ids(chunks, model.vocab_size)], dtype=torch.long, device=device
+        [phoneme_token_ids(text, model.vocab_size)], dtype=torch.long, device=device
     )
 
     with torch.inference_mode():

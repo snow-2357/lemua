@@ -6,11 +6,7 @@ PAD_ID = 0
 BOS_ID = 1
 EOS_ID = 2
 
-@lru_cache(maxsize=1)
-def _g2p_pipeline():
-    from kokoro import KPipeline
-
-    return KPipeline(lang_code="a", model=False)
+_ESPEAK_DLL_DIRECTORY = None
 
 
 def _configure_espeak(espeakng_loader):
@@ -22,7 +18,9 @@ def _configure_espeak(espeakng_loader):
     os.environ["PHONEMIZER_ESPEAK_DATA_PATH"] = data_path
 
     if sys.platform == "win32" and _ESPEAK_DLL_DIRECTORY is None:
-        _ESPEAK_DLL_DIRECTORY = os.add_dll_directory(str(Path(library_path).parent))
+        _ESPEAK_DLL_DIRECTORY = os.add_dll_directory(
+            str(Path(library_path).parent)
+        )
 
 
 def text_to_phonemes(text: str) -> str:
@@ -52,9 +50,7 @@ def text_to_phonemes(text: str) -> str:
         raise TypeError("The phonemizer returned an unexpected batch result.")
     phonemes = " ".join(phonemes.split())
     if not phonemes:
-        raise ValueError(
-            "The phonemizer did not produce phonemes for the supplied text."
-        )
+        raise ValueError("The phonemizer did not produce phonemes for the supplied text.")
     return phonemes
 
 

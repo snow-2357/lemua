@@ -212,30 +212,53 @@ export async function initializeKokoro(): Promise<void> {
   return initializationPromise;
 }
 
-function readNumpyFloatArray(file: Uint8Array): Float32Array {
-  const signature = [0x93, 0x4e, 0x55, 0x4d, 0x50, 0x59];
-  if (!signature.every((byte, index) => file[index] === byte)) {
-    throw new Error('The selected Kokoro voice data has an invalid NumPy header.');
+function getNpyDataOffset(bytes: Uint8Array): { offset: number; shape: number[] } {
+  if (
+    bytes.length < 10 ||
+    bytes[0] !== 0x93 ||
+    String.fromCharCode(...bytes.subarray(1, 6)) !== 'NUMPY'
+  ) {
+    throw new Error('The Kokoro voice archive contains an invalid NumPy file.')
   }
 
-  const view = new DataView(file.buffer, file.byteOffset, file.byteLength);
-  const majorVersion = file[6];
+  const majorVersion = bytes[6]
+  const headerLengthBytes = majorVersion === 1 ? 2 : 4
+  const headerOffset = 8 + headerLengthBytes
+  const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength)
   const headerLength =
-    majorVersion === 1 ? view.getUint16(8, true) : view.getUint32(8, true);
-  const dataOffset = majorVersion === 1 ? 10 + headerLength : 12 + headerLength;
-  if (dataOffset > file.byteLength || (file.byteLength - dataOffset) % 4 !== 0) {
-    throw new Error('The selected Kokoro voice data is truncated or malformed.');
+    majorVersion === 1
+      ? view.getUint16(8, true)
+      : view.getUint32(8, true)
+  const header = new TextDecoder().decode(
+    bytes.subarray(headerOffset, headerOffset + headerLength),
+  )
+  const descriptor = /['"]descr['"]\s*:\s*['"]([^'"]+)['"]/.exec(header)?.[1]
+  const shapeText = /['"]shape['"]\s*:\s*\(([^)]*)\)/.exec(header)?.[1]
+  if ((descriptor !== '<f4' && descriptor !== '|f4') || !shapeText) {
+    throw new Error('The Kokoro voice embedding has an unsupported format.')
   }
 
-  const count = (file.byteLength - dataOffset) / 4;
-  const values = new Float32Array(count);
-  for (let index = 0; index < count; index += 1) {
-    values[index] = view.getFloat32(dataOffset + index * 4, true);
+  const shape = shapeText
+    .split(',')
+    .map((dimension) => Number(dimension.trim()))
+    .filter((dimension) => Number.isInteger(dimension) && dimension > 0)
+  if (shape.length !== 3 || shape[1] !== 1 || shape[2] !== 256) {
+    throw new Error('The Kokoro voice embedding has an unexpected shape.')
   }
-  if (count < 510 * STYLE_DIMENSION) {
-    throw new Error('The selected Kokoro voice data does not contain enough style vectors.');
+  return { offset: headerOffset + headerLength, shape }
+}
+
+function readNumpyFloatArray(file: Uint8Array): Float32Array {
+  const { offset, shape } = getNpyDataOffset(file)
+  const count = shape[0]
+  const values = new Float32Array(count * STYLE_DIMENSION)
+  const view = new DataView(file.buffer, file.byteOffset + offset, count * STYLE_DIMENSION * Float32Array.BYTES_PER_ELEMENT)
+  
+  for (let index = 0; index < count * STYLE_DIMENSION; index += 1) {
+    values[index] = view.getFloat32(index * Float32Array.BYTES_PER_ELEMENT, true)
   }
-  return values;
+  
+  return values
 }
 
 async function loadVoiceData(): Promise<Float32Array> {

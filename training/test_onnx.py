@@ -9,7 +9,7 @@ import soundfile as sf
 from frontend import phoneme_token_ids
 
 TRAINING_DIR = Path(__file__).resolve().parent
-DEFAULT_MODEL = TRAINING_DIR / "tts_student_vocoder.onnx"
+DEFAULT_MODEL = TRAINING_DIR / "lumua.onnx"
 SAMPLE_RATE = 22050
 VOCAB_SIZE = 10000
 

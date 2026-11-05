@@ -16,7 +16,7 @@ from synthesize import (
 )
 
 TRAINING_DIR = Path(__file__).resolve().parent
-DEFAULT_OUTPUT = TRAINING_DIR / "tts_student_vocoder.onnx"
+DEFAULT_OUTPUT = TRAINING_DIR / "lumua.onnx"
 TEST_SENTENCES = [
     "Hello world",
     "The quick brown fox jumps over the lazy dog.",

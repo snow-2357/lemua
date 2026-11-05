@@ -1,6 +1,7 @@
 import { Asset } from 'expo-asset';
 import * as FileSystem from 'expo-file-system/legacy';
 import { NativeModules } from 'react-native';
+import { unzipSync } from 'fflate';
 import type { OpenPhonemizer } from 'expo-open-phonemizer';
 import type { InferenceSession } from 'onnxruntime-react-native';
 
@@ -8,6 +9,7 @@ const bundleBaseUrl =
   'https://huggingface.co/snow2357/koroko_int8/resolve/main/mobile_bundle'
 const modelUrl = `${bundleBaseUrl}/kokoro_mobile_int8.onnx`
 const voicesUrl = `${bundleBaseUrl}/voices_mobile.bin`
+const warmVoice = 'tone_warm'
 const metadataUrl = `${bundleBaseUrl}/kokoro_metadata.json`
 const SAMPLE_RATE = 24000;
 const STYLE_DIMENSION = 256;
@@ -271,29 +273,25 @@ async function loadVoiceData(): Promise<Float32Array> {
   if (!voiceLoadPromise) {
     voiceLoadPromise = (async () => {
       const uri = await loadAssetUri(voicesUrl, 'voices_mobile.bin');
-      console.log('[Kokoro] Loading voice data from:', uri);
-      
-      // Read file as base64, then convert to Uint8Array
       const base64Data = await FileSystem.readAsStringAsync(uri, {
         encoding: FileSystem.EncodingType.Base64,
       });
-      
-      console.log('[Kokoro] Voice data base64 length:', base64Data.length);
-      
-      // Decode base64 to binary - proper conversion for React Native
       const binaryString = atob(base64Data);
-      const len = binaryString.length;
-      const bytes = new Uint8Array(len);
-      
-      for (let i = 0; i < len; i++) {
-        const code = binaryString.charCodeAt(i);
-        bytes[i] = code & 0xff;  // Ensure value is 0-255
+      const bytes = new Uint8Array(binaryString.length);
+      for (let index = 0; index < binaryString.length; index += 1) {
+        bytes[index] = binaryString.charCodeAt(index) & 0xff;
       }
-      
-      console.log('[Kokoro] Voice data bytes length:', bytes.length);
-      console.log('[Kokoro] First bytes (NumPy signature):', bytes[0].toString(16), bytes[1], bytes[2], bytes[3], bytes[4], bytes[5]);
-      
-      return readNumpyFloatArray(bytes);
+
+      // The voice pack is a ZIP archive of per-voice .npy files, as in the PWA.
+      const archive = unzipSync(bytes, {
+        filter: (file) => file.name === `${warmVoice}.npy`,
+      });
+      const warmVoiceFile = archive[`${warmVoice}.npy`];
+      if (!warmVoiceFile) {
+        throw new Error(`The Kokoro voice pack does not include ${warmVoice}.`);
+      }
+
+      return readNumpyFloatArray(warmVoiceFile);
     })();
   }
 

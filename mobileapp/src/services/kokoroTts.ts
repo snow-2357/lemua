@@ -345,7 +345,11 @@ async function synthesizeKokoroAudioInternal(
   }
 
   const resources = await getResources();
-  const speechText = normalizeSpeechText(text);
+  // Add pause markers at sentence boundaries (periods, question marks, exclamation marks)
+  const textWithPauses = text
+    .replace(/([.!?])\s+/g, '$1... ')
+    .replace(/\n\n+/g, '... ... ')
+  const speechText = normalizeSpeechText(textWithPauses);
   const phonemes = normalizePhonemes(
     speechText
       ? await resources.phonemizer.phonemize(speechText, true)

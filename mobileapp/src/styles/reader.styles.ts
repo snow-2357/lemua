@@ -63,35 +63,35 @@ export const readerStyles = StyleSheet.create({
     fontSize: 12,
   },
   audioPreview: {
-    paddingHorizontal: 20,
-    paddingTop: 6,
-    paddingBottom: 20,
+    paddingHorizontal: 16,
+    paddingTop: 4,
+    paddingBottom: 16,
   },
   page: {
     flex: 1,
-    paddingHorizontal: 26,
-    paddingTop: 12,
-    paddingBottom: 10,
+    paddingHorizontal: 24,
+    paddingTop: 10,
+    paddingBottom: 8,
   },
   chapterHeading: {
-    marginBottom: 16,
+    marginBottom: 14,
   },
   eyebrow: {
-    fontSize: 9,
+    fontSize: 8,
     fontWeight: '700',
-    letterSpacing: 1.3,
-    marginBottom: 8,
+    letterSpacing: 1.2,
+    marginBottom: 6,
   },
   chapterTitle: {
     fontFamily: 'Georgia',
-    fontSize: 24,
-    lineHeight: 31,
+    fontSize: 22,
+    lineHeight: 28,
   },
   chapterText: {
     fontFamily: 'Georgia',
-    fontSize: 19,
-    lineHeight: 28,
-    paddingBottom: 24,
+    fontSize: 17,
+    lineHeight: 26,
+    paddingBottom: 20,
   },
   illustrationContainer: {
     alignItems: 'center',
@@ -110,8 +110,8 @@ export const readerStyles = StyleSheet.create({
     textAlign: 'center',
   },
   footer: {
-    paddingHorizontal: 24,
-    paddingBottom: 18,
+    paddingHorizontal: 20,
+    paddingBottom: 14,
   },
   progressTrack: {
     marginTop: 2,
@@ -132,21 +132,21 @@ export const readerStyles = StyleSheet.create({
   },
   pageButton: {
     alignItems: 'center',
-    height: 36,
+    height: 32,
     justifyContent: 'center',
-    width: 42,
+    width: 38,
   },
   pageButtonText: {
     fontFamily: 'Georgia',
-    fontSize: 29,
-    lineHeight: 32,
+    fontSize: 26,
+    lineHeight: 28,
   },
   disabledPageButton: {
     opacity: 0.3,
   },
   pageCount: {
     flex: 1,
-    fontSize: 11,
+    fontSize: 9,
     textAlign: 'center',
   },
   contentsScreen: {

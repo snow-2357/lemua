@@ -422,12 +422,12 @@ export const libraryStyles = StyleSheet.create({
     backgroundColor: '#e9e4da',
     borderRadius: 16,
     marginBottom: 8,
-    padding: 16,
+    padding: 12,
   },
   audioCardCompact: {
     borderRadius: 12,
     marginBottom: 0,
-    padding: 11,
+    padding: 8,
   },
   audioTopCopyCompact: {
     flex: 1,
@@ -462,14 +462,14 @@ export const libraryStyles = StyleSheet.create({
     alignItems: 'center',
     backgroundColor: '#39352e',
     borderRadius: 19,
-    height: 40,
+    height: 38,
     justifyContent: 'center',
-    width: 40,
+    width: 38,
   },
   playButtonCompact: {
-    borderRadius: 16,
-    height: 32,
-    width: 32,
+    borderRadius: 15,
+    height: 28,
+    width: 28,
   },
   playButtonText: {
     color: '#131212ff',
@@ -482,14 +482,14 @@ export const libraryStyles = StyleSheet.create({
     alignItems: 'center',
     flexDirection: 'row',
     gap: 2,
-    height: 42,
+    height: 38,
     justifyContent: 'space-between',
-    marginTop: 15,
+    marginTop: 12,
     overflow: 'hidden',
   },
   waveformCompact: {
-    height: 26,
-    marginTop: 8,
+    height: 20,
+    marginTop: 6,
   },
   waveBar: {
     backgroundColor: '#b6ad9e',
@@ -503,17 +503,17 @@ export const libraryStyles = StyleSheet.create({
   audioMeta: {
     flexDirection: 'row',
     justifyContent: 'space-between',
-    marginTop: 7,
+    marginTop: 5,
   },
   audioMetaCompact: {
-    marginTop: 3,
+    marginTop: 2,
   },
   audioMetaText: {
     color: '#827a6e',
-    fontSize: 9,
+    fontSize: 8,
   },
   audioMetaTextCompact: {
-    fontSize: 7,
+    fontSize: 6,
   },
   emptyLibrary: {
     alignItems: 'center',

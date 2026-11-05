@@ -143,21 +143,19 @@ export default function AudioPreview({
         >
           {formatAudioTime(currentTime)}
         </Text>
-        <Text
-          style={[
-            styles.audioMetaText,
-            compact && styles.audioMetaTextCompact,
-            { color: colors.mutedText },
-          ]}
-        >
-          {isLoading
-            ? 'Generating audio…'
-            : Platform.OS === 'web'
-              ? 'Browser speech · web preview'
-              : compact
-                ? 'Kokoro · on-device voice'
-                : 'Kokoro · on-device audio'}
-        </Text>
+        {isLoading ? (
+          <ActivityIndicator size="small" color={colors.mutedText} />
+        ) : (
+          <Text
+            style={[
+              styles.audioMetaText,
+              compact && styles.audioMetaTextCompact,
+              { color: colors.mutedText },
+            ]}
+          >
+            {isPlaying && !isPaused ? 'Listening' : isPaused ? 'Paused' : 'Listen to chapter'}
+          </Text>
+        )}
         <Text
           style={[
             styles.audioMetaText,

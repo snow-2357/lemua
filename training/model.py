@@ -1,3 +1,5 @@
+import math
+
 import torch
 import torch.nn as nn
 from torch.nn.utils.rnn import pack_padded_sequence, pad_packed_sequence
@@ -30,13 +32,25 @@ class TTSStudentModel(nn.Module):
             batch_first=True,
         )
         self.decoder = nn.TransformerDecoder(decoder_layer, num_layers=2)
-        self.frame_positions = nn.Embedding(max_frames, hidden_dim)
+        self.register_buffer(
+            "relative_frequencies",
+            math.pi * torch.logspace(0, 10, hidden_dim // 2, base=2.0),
+            persistent=False,
+        )
+        self.query_projection = nn.Linear(hidden_dim, hidden_dim)
         self.mel_head = nn.Linear(hidden_dim, 80)
         self.length_head = nn.Sequential(
             nn.Linear(hidden_dim, hidden_dim // 2),
             nn.ReLU(),
             nn.Linear(hidden_dim // 2, 1),
         )
+
+    def _relative_encoding(self, lengths, size):
+        # Position as a fraction of each sample's own length, so frames can align to tokens.
+        positions = torch.arange(size, device=lengths.device, dtype=torch.float32)
+        relative = positions.unsqueeze(0) / lengths.clamp(min=1).unsqueeze(1).float()
+        angles = relative.unsqueeze(-1) * self.relative_frequencies
+        return torch.cat([angles.sin(), angles.cos()], dim=-1)
 
     def forward(self, tokens, max_frames, frame_lengths=None):
         if tokens.ndim != 2 or tokens.size(1) == 0:
@@ -70,16 +84,18 @@ class TTSStudentModel(nn.Module):
         pooled = (encoded * valid_tokens).sum(dim=1) / token_lengths.unsqueeze(-1)
         log_frame_count = self.length_head(pooled).squeeze(-1)
 
+        if frame_lengths is None:
+            frame_lengths = torch.full(
+                (tokens.size(0),), max_frames, device=tokens.device, dtype=torch.long
+            )
         positions = torch.arange(max_frames, device=tokens.device)
-        queries = self.frame_positions(positions).unsqueeze(0).expand(
-            tokens.size(0), -1, -1
-        )
-        frame_padding_mask = None
-        if frame_lengths is not None:
-            frame_padding_mask = positions.unsqueeze(0) >= frame_lengths.unsqueeze(1)
+        frame_padding_mask = positions.unsqueeze(0) >= frame_lengths.unsqueeze(1)
+        frame_encoding = self._relative_encoding(frame_lengths, max_frames)
+        queries = self.query_projection(frame_encoding)
+        memory = encoded + self._relative_encoding(token_lengths, tokens.size(1))
         decoded = self.decoder(
-            tgt=queries,
-            memory=encoded,
+            tgt=queries + frame_encoding,
+            memory=memory,
             memory_key_padding_mask=token_mask,
             tgt_key_padding_mask=frame_padding_mask,
         )

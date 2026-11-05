@@ -20,6 +20,8 @@ with open(CSV_FILE, "r", encoding="utf-8") as f:
         if len(row) >= 3:
             text = row[2].strip() if row[2].strip() else row[1].strip()
             sentences.append(text)
+        elif len(row) == 2:
+            sentences.append(row[1].strip())
         elif len(row) == 1:
             sentences.append(row[0].strip())
 

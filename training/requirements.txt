@@ -1,2 +1,8 @@
 espeakng-loader>=0.2.4
 phonemizer>=3.6.0
+torch
+# torchaudio.prototype (HiFiGAN vocoder) was removed in 2.9
+torchaudio<2.9
+soundfile
+numpy
+kokoro>=0.9

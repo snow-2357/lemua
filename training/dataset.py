@@ -1,3 +1,4 @@
+import math
 import os
 
 import numpy as np
@@ -13,29 +14,47 @@ from frontend import phoneme_token_ids
 class TTSTeacherDataset(Dataset):
     """Loads phoneme tokens and mel targets from cached teacher audio."""
 
-    def __init__(self, cache_dir: str | os.PathLike[str] = "dataset_cache"):
+    def __init__(
+        self,
+        cache_dir: str | os.PathLike[str] = "dataset_cache",
+        max_frames: int | None = None,
+    ):
         self.cache_dir = os.fspath(cache_dir)
         if not os.path.isdir(self.cache_dir):
             raise FileNotFoundError(f"Dataset cache directory not found: {self.cache_dir}")
 
-        self.sentence_dirs = sorted(
-            os.path.join(self.cache_dir, name)
-            for name in os.listdir(self.cache_dir)
-            if os.path.isdir(os.path.join(self.cache_dir, name))
-        )
-        if not self.sentence_dirs:
-            raise ValueError(f"No sentence folders found in {self.cache_dir}.")
+        self.sample_rate = int(HIFIGAN_VOCODER_V3_LJSPEECH.sample_rate)
+        hop_length = 256
 
+        self.sentence_dirs = []
         self.tokens = []
-        for sentence_dir in self.sentence_dirs:
+        skipped = 0
+        for name in sorted(os.listdir(self.cache_dir)):
+            sentence_dir = os.path.join(self.cache_dir, name)
             text_path = os.path.join(sentence_dir, "text.txt")
+            audio_path = os.path.join(sentence_dir, "audio.wav")
+            if not (os.path.isfile(text_path) and os.path.isfile(audio_path)):
+                skipped += 1
+                continue
+            if max_frames is not None:
+                info = sf.info(audio_path)
+                resampled = math.ceil(info.frames * self.sample_rate / info.samplerate)
+                if resampled // hop_length + 1 > max_frames:
+                    skipped += 1
+                    continue
             with open(text_path, encoding="utf-8") as text_file:
                 text = text_file.read().strip()
             if not text:
-                raise ValueError(f"Empty training text in {text_path}.")
+                skipped += 1
+                continue
+            self.sentence_dirs.append(sentence_dir)
             self.tokens.append(phoneme_token_ids(text))
 
-        self.sample_rate = int(HIFIGAN_VOCODER_V3_LJSPEECH.sample_rate)
+        if skipped:
+            print(f"Skipped {skipped} incomplete, empty, or too-long samples.")
+        if not self.sentence_dirs:
+            raise ValueError(f"No usable sentence folders found in {self.cache_dir}.")
+
         self.mel_transform = (
             HIFIGAN_VOCODER_V3_LJSPEECH.get_mel_transform()
         )

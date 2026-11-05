@@ -20,7 +20,7 @@ MAX_FRAMES = 1600
 BATCH_SIZE = 8
 NUM_WORKERS = 2
 DEFAULT_EPOCHS = 100
-CHECKPOINT_FORMAT_VERSION = 4
+CHECKPOINT_FORMAT_VERSION = 5
 INPUT_ENCODING = "espeak_ipa_codepoint"
 
 
@@ -137,7 +137,9 @@ def main():
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     print(f"Training on device: {device}")
 
-    dataset = TTSTeacherDataset(str(TRAINING_DIR / "dataset_cache"))
+    dataset = TTSTeacherDataset(
+        str(TRAINING_DIR / "dataset_cache"), max_frames=MAX_FRAMES
+    )
     if len(dataset) < 2:
         raise ValueError("Training requires at least two cached audio samples.")
     split_generator = torch.Generator().manual_seed(42)

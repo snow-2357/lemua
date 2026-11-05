@@ -2,8 +2,8 @@ import argparse
 import math
 from pathlib import Path
 
+import soundfile as sf
 import torch
-import torchaudio
 from torchaudio.prototype.pipelines import HIFIGAN_VOCODER_V3_LJSPEECH
 
 from frontend import phoneme_token_ids
@@ -17,7 +17,7 @@ def load_student(device):
     checkpoint = torch.load(CHECKPOINT_PATH, map_location=device, weights_only=True)
     if (
         not isinstance(checkpoint, dict)
-        or checkpoint.get("format_version") != 4
+        or checkpoint.get("format_version") != 5
         or checkpoint.get("input_encoding") != "espeak_ipa_codepoint"
     ):
         raise RuntimeError(
@@ -58,7 +58,9 @@ def synthesize(text, output_path):
         vocoder = bundle.get_vocoder().to(device).eval()
         waveform = vocoder(mel)
 
-    torchaudio.save(output_path, waveform.squeeze(0).cpu(), int(bundle.sample_rate))
+    sf.write(
+        output_path, waveform.squeeze().cpu().numpy(), int(bundle.sample_rate)
+    )
     print(f"Saved synthesized audio to {output_path}")
     print(f"Sample rate: {bundle.sample_rate} Hz")
 

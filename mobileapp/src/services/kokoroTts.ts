@@ -213,12 +213,17 @@ export async function initializeKokoro(): Promise<void> {
 }
 
 function getNpyDataOffset(bytes: Uint8Array): { offset: number; shape: number[] } {
-  if (
-    bytes.length < 10 ||
-    bytes[0] !== 0x93 ||
-    String.fromCharCode(...bytes.subarray(1, 6)) !== 'NUMPY'
-  ) {
-    throw new Error('The Kokoro voice archive contains an invalid NumPy file.')
+  if (bytes.length < 10) {
+    throw new Error(`NumPy file too short: ${bytes.length} bytes (need at least 10)`)
+  }
+  
+  if (bytes[0] !== 0x93) {
+    throw new Error(`Invalid NumPy signature byte[0]: ${bytes[0].toString(16)} (expected 0x93)`)
+  }
+  
+  const magicString = String.fromCharCode(...bytes.subarray(1, 6));
+  if (magicString !== 'NUMPY') {
+    throw new Error(`Invalid NumPy magic string: "${magicString}" (expected "NUMPY")`)
   }
 
   const majorVersion = bytes[6]
@@ -266,15 +271,28 @@ async function loadVoiceData(): Promise<Float32Array> {
   if (!voiceLoadPromise) {
     voiceLoadPromise = (async () => {
       const uri = await loadAssetUri(voicesUrl, 'voices_mobile.bin');
-      // Read file directly from filesystem instead of using fetch
+      console.log('[Kokoro] Loading voice data from:', uri);
+      
+      // Read file as base64, then convert to Uint8Array
       const base64Data = await FileSystem.readAsStringAsync(uri, {
         encoding: FileSystem.EncodingType.Base64,
       });
+      
+      console.log('[Kokoro] Voice data base64 length:', base64Data.length);
+      
+      // Decode base64 to binary - proper conversion for React Native
       const binaryString = atob(base64Data);
-      const bytes = new Uint8Array(binaryString.length);
-      for (let i = 0; i < binaryString.length; i++) {
-        bytes[i] = binaryString.charCodeAt(i);
+      const len = binaryString.length;
+      const bytes = new Uint8Array(len);
+      
+      for (let i = 0; i < len; i++) {
+        const code = binaryString.charCodeAt(i);
+        bytes[i] = code & 0xff;  // Ensure value is 0-255
       }
+      
+      console.log('[Kokoro] Voice data bytes length:', bytes.length);
+      console.log('[Kokoro] First bytes (NumPy signature):', bytes[0].toString(16), bytes[1], bytes[2], bytes[3], bytes[4], bytes[5]);
+      
       return readNumpyFloatArray(bytes);
     })();
   }

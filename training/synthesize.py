@@ -63,7 +63,7 @@ def synthesize(text, output_path, speed=1.0):
     model = load_student(device)
     vocoder = load_vocoder(device)
     tokens = torch.tensor(
-        [phoneme_token_ids(text, model.vocab_size)], dtype=torch.long, device=device
+        [chunk_token_ids(chunks, model.vocab_size)], dtype=torch.long, device=device
     )
 
     with torch.inference_mode():

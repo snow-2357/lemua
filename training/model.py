@@ -1,5 +1,3 @@
-import math
-
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
@@ -45,7 +43,7 @@ class TTSStudentModel(nn.Module):
     def __init__(self, vocab_size=10000, hidden_dim=256, num_decoder_blocks=6):
         super().__init__()
         if hidden_dim % 2:
-            raise ValueError("hidden_dim must be even for the bidirectional encoder.")
+            raise ValueError("hidden_dim must be even for the bidirectional LSTMs.")
 
         self.vocab_size = vocab_size
         self.hidden_dim = hidden_dim
@@ -65,6 +63,11 @@ class TTSStudentModel(nn.Module):
             nn.Dropout(0.1),
             nn.Linear(hidden_dim, 1),
         )
+        self.frame_position = nn.Linear(1, hidden_dim)
+        self.decoder = nn.LSTM(
+            hidden_dim, hidden_dim // 2, num_layers=2, batch_first=True, bidirectional=True
+        )
+        self.mel_head = nn.Linear(hidden_dim, 80)
 
         # Where the frame sits inside its token: 0 at the start, ->1 at the end.
         self.within_projection = nn.Linear(5, hidden_dim)

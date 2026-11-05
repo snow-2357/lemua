@@ -6,7 +6,11 @@ PAD_ID = 0
 BOS_ID = 1
 EOS_ID = 2
 
-_ESPEAK_DLL_DIRECTORY = None
+@lru_cache(maxsize=1)
+def _g2p_pipeline():
+    from kokoro import KPipeline
+
+    return KPipeline(lang_code="a", model=False)
 
 
 def _configure_espeak(espeakng_loader):

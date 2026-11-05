@@ -10,6 +10,7 @@ from torch.utils.data import DataLoader, random_split
 from dataset import TTSTeacherDataset
 from model import TTSStudentModel
 
+
 TRAINING_DIR = Path(__file__).resolve().parent
 CHECKPOINT_PATH = TRAINING_DIR / "tts_student_model.pth"
 TRAINING_STATE_PATH = TRAINING_DIR / "tts_student_training_state.pth"

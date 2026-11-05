@@ -80,8 +80,8 @@ class TTSStudentModel(nn.Module):
     def encode(self, tokens):
         token_mask = tokens.eq(0)
         token_lengths = (~token_mask).sum(dim=1)
-        if torch.any(token_lengths == 0):
-            raise ValueError("Each input must contain at least one non-padding token.")
+        # if torch.any(token_lengths == 0):
+        #     raise ValueError("Each input must contain at least one non-padding token.")
 
         embedded = self.embedding(tokens)
         packed = pack_padded_sequence(
@@ -128,8 +128,8 @@ class TTSStudentModel(nn.Module):
         in log1p(mel frames). Pass teacher `durations` (batch, tokens) long
         while training; leave None at inference to use the predicted ones.
         """
-        if tokens.ndim != 2 or tokens.size(1) == 0:
-            raise ValueError("tokens must have shape (batch, non-empty sequence).")
+        # if tokens.ndim != 2 or tokens.size(1) == 0:
+        #     raise ValueError("tokens must have shape (batch, non-empty sequence).")
 
         encoded, token_mask = self.encode(tokens)
         log_durations = self.duration_head(encoded).squeeze(-1)

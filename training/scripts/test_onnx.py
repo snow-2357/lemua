@@ -80,7 +80,7 @@ def phoneme_token_ids(text: str, vocab_size: int = 10000) -> list[int]:
 
 
 TRAINING_DIR = Path(__file__).resolve().parent.parent
-DEFAULT_MODEL = TRAINING_DIR / "checkpoints" / "lumua.onnx"
+DEFAULT_MODEL = TRAINING_DIR / "checkpoints" / "kokoro-v1.0.onnx"
 SAMPLE_RATE = 22050
 VOCAB_SIZE = 10000
 
@@ -89,9 +89,13 @@ def main():
     parser = argparse.ArgumentParser(
         description="Run the combined student + vocoder ONNX model on text."
     )
-    parser.add_argument("text", nargs="?", default="Hello world, this is a test.")
+    parser.add_argument(
+        "text",
+        nargs="?",
+        default="As the golden light of late afternoon began to filter through the dense canopy of ancient pine trees, a gentle breeze swept across the valley, carrying the crisp scent of damp earth and blooming wildflowers. High above the winding river, a lone hawk circled lazily against the pale azure sky, scanning the landscape below with sharp, unblinking focus. Technology and nature have long danced in a delicate balance, where every subtle adaptation shapes the future of how we understand our world, turning complex algorithms into seamless expressions of human thought and creativity.",
+    )
     parser.add_argument("--model", default=str(DEFAULT_MODEL))
-    parser.add_argument("--output", default=str(TRAINING_DIR / "onnx_output.wav"))
+    parser.add_argument("--output", default=str(TRAINING_DIR / "original_output.wav"))
     parser.add_argument("--speed", type=float, default=1.0)
     args = parser.parse_args()
 

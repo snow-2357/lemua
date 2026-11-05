@@ -1,17 +1,1 @@
-Exactly That's a real UX problem. Imagine a customer sees ₹100, spends 5 minutes filling in their details, and suddenly you tell them it's ₹150. They'll be pissed.
-
-But you don't have to choose between correctness and user experience.
-
-The solution is to separate the displayed price from the confirmed price.
-1. Product page: Customer sees ₹100.
-2. Cart: Keep showing ₹100, but if the price changes, notify them.
-3. Checkout: Show the updated price and ask for confirmation before charging them.
-4. Payment: Charge only the amount the customer agreed to.
-You can also implement a price-lock policy: once checkout starts, guarantee the quoted price for, say, 10 minutes. That's a business decision, not a technical requirement.
-
-And here's the key distinction:
-- If the admin changes ₹100 to ₹101, you might decide to honor the old price for customers already checking out.
-- If the admin changes ₹100 to ₹10,000 because of a mistake, you probably want to prevent orders at the wrong price.
-My recommendation: For a normal shop, validate prices on the backend, notify customers only when the price actually changes, and honor the old price for a short, explicitly defined checkout window if the business can afford it.
-
-You don't need a distributed lock or complicated concurrency system for this. A clear pricing policy and server-side validation are enough for most shops.
+As the golden light of late afternoon began to filter through the dense canopy of ancient pine trees, a gentle breeze swept across the valley, carrying the crisp scent of damp earth and blooming wildflowers. High above the winding river, a lone hawk circled lazily against the pale azure sky, scanning the landscape below with sharp, unblinking focus. Technology and nature have long danced in a delicate balance, where every subtle adaptation shapes the future of how we understand our world, turning complex algorithms into seamless expressions of human thought and creativity.

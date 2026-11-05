@@ -6,6 +6,7 @@ import ProfileScreen from './src/screens/ProfileScreen';
 import ReaderScreen from './src/screens/ReaderScreen';
 import { useLibraryController } from './src/hooks/useLibraryController';
 import { loadProfileName, saveProfileName } from './src/services/profileStorage';
+import { initializeKokoro } from './src/services/kokoroTts';
 
 function AppContent() {
   const { toggleTheme } = useAppTheme();
@@ -41,6 +42,14 @@ function AppContent() {
       .finally(() => {
         if (isMounted) setIsProfileLoaded(true);
       });
+
+    // Initialize Kokoro TTS in the background when app starts
+    initializeKokoro().catch((error: unknown) => {
+      console.warn(
+        'Kokoro TTS initialization failed:',
+        error instanceof Error ? error.message : 'Unknown error',
+      );
+    });
 
     return () => {
       isMounted = false;

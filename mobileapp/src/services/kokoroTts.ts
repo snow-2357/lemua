@@ -32,6 +32,7 @@ let activeSynthesisCount = 0;
 let pendingReleasePromise: Promise<void> | null = null;
 let releaseWaiters: (() => void)[] = [];
 const chapterAudioPromises = new Map<string, Promise<string>>();
+let initializationPromise: Promise<void> | null = null;
 
 function adaptPhonemizerOutput(phonemizer: OpenPhonemizer): void {
   const [outputName] = phonemizer.session.outputNames;
@@ -183,6 +184,32 @@ function getResources(): Promise<KokoroResources> {
     });
   }
   return resourcesPromise;
+}
+
+/**
+ * Initialize Kokoro TTS by loading all assets into memory.
+ * Call this when the app starts to pre-load resources.
+ * Subsequent calls will use cached in-memory resources.
+ */
+export async function initializeKokoro(): Promise<void> {
+  if (initializationPromise) {
+    return initializationPromise;
+  }
+
+  initializationPromise = (async () => {
+    try {
+      // Load both resources and voice data in parallel
+      await Promise.all([
+        getResources(),
+        loadVoiceData(),
+      ]);
+    } catch (error) {
+      initializationPromise = null;
+      throw error;
+    }
+  })();
+
+  return initializationPromise;
 }
 
 function readNumpyFloatArray(file: Uint8Array): Float32Array {

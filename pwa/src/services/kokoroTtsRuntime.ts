@@ -467,34 +467,53 @@ export async function generateKokoroAudio(
 
   const voiceData = runtime.voiceArchive[`${warmVoice}.npy`]
   const audioChunks: Float32Array[] = []
-  for (const tokenChunk of splitTokens(tokens)) {
-    await new Promise((resolve) => setTimeout(resolve, 0))
-    signal?.throwIfAborted()
-    onProgress('Generating speech with Kokoro on this device…')
-    const paddedTokens = BigInt64Array.from([
-      0n,
-      ...tokenChunk.map((token) => BigInt(token)),
-      0n,
-    ])
-    const inputs: Record<string, ort.Tensor> = {
-      tokens: new ort.Tensor('int64', paddedTokens, [1, paddedTokens.length]),
-      style: new ort.Tensor('float32', createVoiceStyle(voiceData, tokenChunk.length), [
-        1,
-        256,
-      ]),
-      speed: new ort.Tensor('float32', Float32Array.of(speed), [1]),
-    }
-    let result: Awaited<ReturnType<typeof runtime.session.run>> | undefined
-    try {
-      result = await runtime.session.run(inputs)
-      const audio = result.audio?.data
-      if (!(audio instanceof Float32Array)) {
-        throw new Error('Kokoro returned audio in an unsupported format.')
+
+  for (let i = 0; i < phonemeLines.length; i++) {
+    const line = phonemeLines[i].trim()
+    if (!line) continue
+
+    const tokens = Array.from(line)
+      .map((phoneme) => runtime.vocab.get(phoneme))
+      .filter((token): token is number => token !== undefined)
+
+    if (tokens.length === 0) continue
+
+    for (const tokenChunk of splitTokens(tokens)) {
+      for (const tokenChunk of splitTokens(tokens)) {
+        await new Promise((resolve) => setTimeout(resolve, 0))
+        signal?.throwIfAborted()
+        onProgress('Generating speech with Kokoro on this device…')
+        const paddedTokens = BigInt64Array.from([
+          0n,
+          ...tokenChunk.map((token) => BigInt(token)),
+          0n,
+        ])
+        const inputs: Record<string, ort.Tensor> = {
+          tokens: new ort.Tensor('int64', paddedTokens, [1, paddedTokens.length]),
+          style: new ort.Tensor('float32', createVoiceStyle(voiceData, tokenChunk.length), [
+            1,
+            256,
+          ]),
+          speed: new ort.Tensor('float32', Float32Array.of(speed), [1]),
+        }
+        let result: Awaited<ReturnType<typeof runtime.session.run>> | undefined
+        try {
+          result = await runtime.session.run(inputs)
+          const audio = result.audio?.data
+          if (!(audio instanceof Float32Array)) {
+            throw new Error('Kokoro returned audio in an unsupported format.')
+          }
+          audioChunks.push(audio.slice())
+        } finally {
+          Object.values(result ?? {}).forEach((tensor) => tensor.dispose())
+          Object.values(inputs).forEach((tensor) => tensor.dispose())
+        }
       }
-      audioChunks.push(audio.slice())
-    } finally {
-      Object.values(result ?? {}).forEach((tensor) => tensor.dispose())
-      Object.values(inputs).forEach((tensor) => tensor.dispose())
+
+    }
+
+    if (i < phonemeLines.length - 1) {
+      audioChunks.push(createSilence(150))
     }
   }
 
@@ -506,4 +525,10 @@ export async function generateKokoroAudio(
     offset += chunk.length
   }
   return encodeWav(samples)
+}
+
+function createSilence(durationMs: number, sampleRate = 24000) {
+  return new Float32Array(
+    Math.floor((sampleRate * durationMs) / 1000),
+  )
 }

@@ -265,8 +265,12 @@
   --cover-color: #849887;
   aspect-ratio: 0.69;
   background:
-    radial-gradient(ellipse at 87% 14%, rgba(255, 255, 255, .17), transparent 40%),
-    linear-gradient(145deg, rgba(255, 255, 255, .08), transparent 52%),
+    radial-gradient(
+      ellipse at 87% 14%,
+      rgba(255, 255, 255, 0.17),
+      transparent 40%
+    ),
+    linear-gradient(145deg, rgba(255, 255, 255, 0.08), transparent 52%),
     var(--cover-color);
   border-radius: 7px 10px 10px 7px;
   box-shadow: 0 11px 20px rgba(31, 30, 25, 0.18);
@@ -299,7 +303,7 @@
 
 .cover-spine {
   background: rgba(26, 29, 24, 0.16);
-  border-right: 1px solid rgba(255, 255, 255, .19);
+  border-right: 1px solid rgba(255, 255, 255, 0.19);
   bottom: 0;
   left: 0;
   position: absolute;
@@ -347,7 +351,12 @@
 }
 
 .cover-gloss {
-  background: linear-gradient(120deg, transparent, rgba(255, 255, 255, .075), transparent);
+  background: linear-gradient(
+    120deg,
+    transparent,
+    rgba(255, 255, 255, 0.075),
+    transparent
+  );
   bottom: 0;
   height: 100%;
   pointer-events: none;
@@ -698,7 +707,7 @@
   opacity: 0.72;
 }
 
-.import-card>svg:last-child {
+.import-card > svg:last-child {
   color: var(--ink-muted);
   flex: 0 0 auto;
 }
@@ -743,7 +752,7 @@
   position: relative;
 }
 
-.milestone-card>div {
+.milestone-card > div {
   min-width: 0;
 }
 

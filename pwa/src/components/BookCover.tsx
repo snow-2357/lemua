@@ -1,13 +1,13 @@
-import type { CSSProperties } from 'react'
-import type { Book } from '../types'
-import { truncateText } from '../utils/truncateText'
+import type { CSSProperties } from 'react';
+import type { Book } from '../types';
+import { truncateText } from '../utils/truncateText';
 
 export default function BookCover({
   book,
   featured = false,
 }: {
-  book: Book
-  featured?: boolean
+  book: Book;
+  featured?: boolean;
 }) {
   return (
     <div
@@ -25,5 +25,5 @@ export default function BookCover({
       </div>
       <div className="cover-gloss" />
     </div>
-  )
+  );
 }

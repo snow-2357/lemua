@@ -1,35 +1,35 @@
 export type Book = {
-  id: string
-  title: string
-  author: string
-  color: string
-  mark: string
-  progress: number
-  subtitle: string
-  isEpub?: boolean
-}
+  id: string;
+  title: string;
+  author: string;
+  color: string;
+  mark: string;
+  progress: number;
+  subtitle: string;
+  isEpub?: boolean;
+};
 
 export type EpubChapter = {
-  title: string
-  paragraphs: string[]
-}
+  title: string;
+  paragraphs: string[];
+};
 
 export type NarrationChunk = {
-  text: string
-  pageIndex: number
-  endPageIndex: number
-}
+  text: string;
+  pageIndex: number;
+  endPageIndex: number;
+};
 
 export type ImportedBook = Book & {
-  isEpub: true
-  file: Blob
-  chapters: EpubChapter[]
-  epubParserVersion?: number
-  fileFingerprint?: string
-  lastReadAt?: number
-  lastChapterIndex?: number
-  lastReaderPage?: number
-}
+  isEpub: true;
+  file: Blob;
+  chapters: EpubChapter[];
+  epubParserVersion?: number;
+  fileFingerprint?: string;
+  lastReadAt?: number;
+  lastChapterIndex?: number;
+  lastReaderPage?: number;
+};
 
 export type IconName =
   | 'book'
@@ -43,4 +43,4 @@ export type IconName =
   | 'plus'
   | 'search'
   | 'sparkle'
-  | 'sun'
+  | 'sun';

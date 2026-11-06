@@ -1,13 +1,13 @@
-import { useState } from 'react'
-import Icon from '../components/Icon'
+import { useState } from 'react';
+import Icon from '../components/Icon';
 
 type Props = {
-  name: string
-  isDark: boolean
-  onBack: () => void
-  onToggleTheme: () => void
-  onSaveName: (name: string) => void | Promise<void>
-}
+  name: string;
+  isDark: boolean;
+  onBack: () => void;
+  onToggleTheme: () => void;
+  onSaveName: (name: string) => void | Promise<void>;
+};
 
 export default function ProfileScreen({
   name,
@@ -16,12 +16,16 @@ export default function ProfileScreen({
   onToggleTheme,
   onSaveName,
 }: Props) {
-  const [draftName, setDraftName] = useState(name)
+  const [draftName, setDraftName] = useState(name);
 
   return (
     <main className="subpage profile-page">
       <header className="subpage-header">
-        <button className="icon-button" onClick={onBack} aria-label="Back to library">
+        <button
+          className="icon-button"
+          onClick={onBack}
+          aria-label="Back to library"
+        >
           <Icon name="chevron-left" />
         </button>
         <span>Profile</span>
@@ -37,7 +41,9 @@ export default function ProfileScreen({
           <p>Make Lemua feel a little more like yours.</p>
         </div>
         <div className="settings-card name-card">
-          <label htmlFor="profile-name" className="eyebrow">YOUR NAME</label>
+          <label htmlFor="profile-name" className="eyebrow">
+            YOUR NAME
+          </label>
           <input
             id="profile-name"
             maxLength={40}
@@ -73,5 +79,5 @@ export default function ProfileScreen({
         <p className="profile-footnote">Your profile stays on this device.</p>
       </section>
     </main>
-  )
+  );
 }

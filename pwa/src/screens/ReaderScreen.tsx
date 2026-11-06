@@ -1,64 +1,74 @@
-import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
-import HTMLFlipBook from 'react-pageflip'
-import type { Book } from '../types'
-import ReaderBottom from '../components/ReaderBottom'
-import Icon from '../components/Icon'
-import { truncateText } from '../utils/truncateText'
-import { createNarrationChunks, indexNarrationPages } from '../utils/narrationText'
-import { useNarrationHighlight } from '../hooks/useNarrationHighlight'
+import {
+  useCallback,
+  useEffect,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+} from 'react';
+import HTMLFlipBook from 'react-pageflip';
+import type { Book } from '../types';
+import ReaderBottom from '../components/ReaderBottom';
+import Icon from '../components/Icon';
+import { truncateText } from '../utils/truncateText';
+import {
+  createNarrationChunks,
+  indexNarrationPages,
+} from '../utils/narrationText';
+import { useNarrationHighlight } from '../hooks/useNarrationHighlight';
 
 type PageFlipApi = {
-  flipNext: () => void
-  flipPrev: () => void
-  turnToPage: (page: number) => void
-  getCurrentPageIndex: () => number
-}
+  flipNext: () => void;
+  flipPrev: () => void;
+  turnToPage: (page: number) => void;
+  getCurrentPageIndex: () => number;
+};
 
 type PageFlipHandle = {
-  pageFlip: () => PageFlipApi | undefined
-}
+  pageFlip: () => PageFlipApi | undefined;
+};
 
 type PageParagraph = {
-  text: string
-  continues: boolean
-  complete: boolean
-}
+  text: string;
+  continues: boolean;
+  complete: boolean;
+};
 
 function wrapParagraph(
   paragraph: string,
   measure: (text: string) => number,
-  maxWidth: number,
+  maxWidth: number
 ): string[] {
-  const words = paragraph.trim().split(/\s+/)
-  const lines: string[] = []
-  let line = ''
+  const words = paragraph.trim().split(/\s+/);
+  const lines: string[] = [];
+  let line = '';
 
   for (const word of words) {
     if (!line && measure(word) > maxWidth) {
-      let chunk = ''
+      let chunk = '';
       for (const character of word) {
         if (chunk && measure(chunk + character) > maxWidth) {
-          lines.push(chunk)
-          chunk = character
+          lines.push(chunk);
+          chunk = character;
         } else {
-          chunk += character
+          chunk += character;
         }
       }
-      line = chunk
-      continue
+      line = chunk;
+      continue;
     }
 
-    const candidate = line ? `${line} ${word}` : word
+    const candidate = line ? `${line} ${word}` : word;
     if (line && measure(candidate) > maxWidth) {
-      lines.push(line)
-      line = word
+      lines.push(line);
+      line = word;
     } else {
-      line = candidate
+      line = candidate;
     }
   }
 
-  if (line) lines.push(line)
-  return lines
+  if (line) lines.push(line);
+  return lines;
 }
 
 function paginateParagraphs(
@@ -68,58 +78,60 @@ function paginateParagraphs(
   lineHeight: number,
   paragraphGap: number,
   firstPageHeight: number,
-  otherPageHeight: number,
+  otherPageHeight: number
 ): PageParagraph[][] {
-  const pages: PageParagraph[][] = [[]]
-  let availableHeight = firstPageHeight
+  const pages: PageParagraph[][] = [[]];
+  let availableHeight = firstPageHeight;
 
   for (const paragraph of paragraphs) {
-    const lines = wrapParagraph(paragraph, measure, maxWidth)
-    let lineIndex = 0
+    const lines = wrapParagraph(paragraph, measure, maxWidth);
+    let lineIndex = 0;
 
     while (lineIndex < lines.length) {
-      const fittingLines = Math.floor(availableHeight / lineHeight)
+      const fittingLines = Math.floor(availableHeight / lineHeight);
       if (fittingLines < 1) {
-        pages.push([])
-        availableHeight = otherPageHeight
-        continue
+        pages.push([]);
+        availableHeight = otherPageHeight;
+        continue;
       }
 
-      const endIndex = Math.min(lineIndex + fittingLines, lines.length)
-      const complete = endIndex === lines.length
+      const endIndex = Math.min(lineIndex + fittingLines, lines.length);
+      const complete = endIndex === lines.length;
       pages[pages.length - 1].push({
         text: lines.slice(lineIndex, endIndex).join('\n'),
         continues: lineIndex > 0,
         complete,
-      })
-      availableHeight -= (endIndex - lineIndex) * lineHeight
-      lineIndex = endIndex
+      });
+      availableHeight -= (endIndex - lineIndex) * lineHeight;
+      lineIndex = endIndex;
 
       if (complete) {
-        availableHeight -= paragraphGap
+        availableHeight -= paragraphGap;
       } else {
-        pages.push([])
-        availableHeight = otherPageHeight
+        pages.push([]);
+        availableHeight = otherPageHeight;
       }
     }
   }
 
-  return pages.length > 1 && pages[pages.length - 1].length === 0 ? pages.slice(0, -1) : pages
+  return pages.length > 1 && pages[pages.length - 1].length === 0
+    ? pages.slice(0, -1)
+    : pages;
 }
 
 type Props = {
-  book: Book
-  chapterTitles: string[]
-  chapterParagraphs: string[]
-  chapterIndex: number
-  chapterPageCounts: Record<number, number>
-  readerPage: number
-  onPageCountChange: (count: number) => void
-  progress: number
-  onBack: () => void
-  onChangeChapter: (index: number, page?: number) => void
-  onChangePage: (page: number) => void
-}
+  book: Book;
+  chapterTitles: string[];
+  chapterParagraphs: string[];
+  chapterIndex: number;
+  chapterPageCounts: Record<number, number>;
+  readerPage: number;
+  onPageCountChange: (count: number) => void;
+  progress: number;
+  onBack: () => void;
+  onChangeChapter: (index: number, page?: number) => void;
+  onChangePage: (page: number) => void;
+};
 
 export default function ReaderScreen({
   book,
@@ -134,112 +146,132 @@ export default function ReaderScreen({
   onChangeChapter,
   onChangePage,
 }: Props) {
-  const [showContents, setShowContents] = useState(false)
+  const [showContents, setShowContents] = useState(false);
   const [paginatedChapter, setPaginatedChapter] = useState<{
-    index: number
-    pages: PageParagraph[][]
-  } | null>(null)
-  const [flipSize, setFlipSize] = useState({ width: 0, height: 0 })
-  const [flipBookRevision, setFlipBookRevision] = useState(0)
-  const [prefersReducedMotion, setPrefersReducedMotion] = useState(false)
+    index: number;
+    pages: PageParagraph[][];
+  } | null>(null);
+  const [flipSize, setFlipSize] = useState({ width: 0, height: 0 });
+  const [flipBookRevision, setFlipBookRevision] = useState(0);
+  const [prefersReducedMotion, setPrefersReducedMotion] = useState(false);
   const [narrationPosition, setNarrationPosition] = useState<{
-    bookId: string
-    chapterIndex: number
-    index: number
-  } | null>(null)
-  const readingViewport = useRef<HTMLDivElement>(null)
-  const measurementText = useRef<HTMLParagraphElement>(null)
-  const measurementPage = useRef<HTMLElement>(null)
-  const headingRef = useRef<HTMLDivElement>(null)
-  const flipBookRef = useRef<PageFlipHandle>(null)
-  const onChangePageRef = useRef(onChangePage)
-  const onPageCountChangeRef = useRef(onPageCountChange)
-  const readerPageRef = useRef(readerPage)
-  const chapterIndexRef = useRef(chapterIndex)
-  const flipBookRevisionRef = useRef(flipBookRevision)
-  const layoutSignature = useRef('')
+    bookId: string;
+    chapterIndex: number;
+    index: number;
+  } | null>(null);
+  const readingViewport = useRef<HTMLDivElement>(null);
+  const measurementText = useRef<HTMLParagraphElement>(null);
+  const measurementPage = useRef<HTMLElement>(null);
+  const headingRef = useRef<HTMLDivElement>(null);
+  const flipBookRef = useRef<PageFlipHandle>(null);
+  const onChangePageRef = useRef(onChangePage);
+  const onPageCountChangeRef = useRef(onPageCountChange);
+  const readerPageRef = useRef(readerPage);
+  const chapterIndexRef = useRef(chapterIndex);
+  const flipBookRevisionRef = useRef(flipBookRevision);
+  const layoutSignature = useRef('');
   const pages = useMemo(
-    () => (paginatedChapter?.index === chapterIndex ? paginatedChapter.pages : []),
-    [chapterIndex, paginatedChapter],
-  )
+    () =>
+      paginatedChapter?.index === chapterIndex ? paginatedChapter.pages : [],
+    [chapterIndex, paginatedChapter]
+  );
   const narrationFragments = useMemo(
     () => indexNarrationPages(chapterParagraphs, pages),
-    [chapterParagraphs, pages],
-  )
+    [chapterParagraphs, pages]
+  );
   const narrationChunks = useMemo(
     () => createNarrationChunks(chapterParagraphs, pages, narrationFragments),
-    [chapterParagraphs, pages, narrationFragments],
-  )
-  const activeNarrationRanges = narrationPosition?.bookId === book.id &&
+    [chapterParagraphs, pages, narrationFragments]
+  );
+  const activeNarrationRanges =
+    narrationPosition?.bookId === book.id &&
     narrationPosition.chapterIndex === chapterIndex
-    ? narrationChunks[narrationPosition.index]?.sourceRanges ?? null
-    : null
-  useNarrationHighlight(readingViewport, narrationFragments, activeNarrationRanges)
+      ? (narrationChunks[narrationPosition.index]?.sourceRanges ?? null)
+      : null;
+  useNarrationHighlight(
+    readingViewport,
+    narrationFragments,
+    activeNarrationRanges
+  );
 
-  const changeNarrationHighlight = useCallback((index: number | null) => {
-    setNarrationPosition((current) => index === null
-      ? current?.bookId === book.id && current.chapterIndex === chapterIndex ? null : current
-      : { bookId: book.id, chapterIndex, index })
-  }, [book.id, chapterIndex])
-
-  useEffect(() => {
-    const motionPreference = window.matchMedia('(prefers-reduced-motion: reduce)')
-    const updateMotionPreference = () => setPrefersReducedMotion(motionPreference.matches)
-    updateMotionPreference()
-    motionPreference.addEventListener('change', updateMotionPreference)
-
-    return () => motionPreference.removeEventListener('change', updateMotionPreference)
-  }, [])
-
-  useEffect(() => {
-    onChangePageRef.current = onChangePage
-  }, [onChangePage])
+  const changeNarrationHighlight = useCallback(
+    (index: number | null) => {
+      setNarrationPosition((current) =>
+        index === null
+          ? current?.bookId === book.id && current.chapterIndex === chapterIndex
+            ? null
+            : current
+          : { bookId: book.id, chapterIndex, index }
+      );
+    },
+    [book.id, chapterIndex]
+  );
 
   useEffect(() => {
-    onPageCountChangeRef.current = onPageCountChange
-  }, [onPageCountChange])
+    const motionPreference = window.matchMedia(
+      '(prefers-reduced-motion: reduce)'
+    );
+    const updateMotionPreference = () =>
+      setPrefersReducedMotion(motionPreference.matches);
+    updateMotionPreference();
+    motionPreference.addEventListener('change', updateMotionPreference);
+
+    return () =>
+      motionPreference.removeEventListener('change', updateMotionPreference);
+  }, []);
+
+  useEffect(() => {
+    onChangePageRef.current = onChangePage;
+  }, [onChangePage]);
+
+  useEffect(() => {
+    onPageCountChangeRef.current = onPageCountChange;
+  }, [onPageCountChange]);
 
   useLayoutEffect(() => {
-    readerPageRef.current = readerPage
-    chapterIndexRef.current = chapterIndex
-    flipBookRevisionRef.current = flipBookRevision
-  }, [chapterIndex, flipBookRevision, readerPage])
+    readerPageRef.current = readerPage;
+    chapterIndexRef.current = chapterIndex;
+    flipBookRevisionRef.current = flipBookRevision;
+  }, [chapterIndex, flipBookRevision, readerPage]);
 
   const changeChapter = (index: number, page = 0) => {
-    const nextRevision = flipBookRevisionRef.current + 1
-    flipBookRevisionRef.current = nextRevision
-    setFlipBookRevision(nextRevision)
-    onChangeChapter(index, page)
-  }
+    const nextRevision = flipBookRevisionRef.current + 1;
+    flipBookRevisionRef.current = nextRevision;
+    setFlipBookRevision(nextRevision);
+    onChangeChapter(index, page);
+  };
 
   useEffect(() => {
-    const viewport = readingViewport.current
-    const sample = measurementText.current
-    const page = measurementPage.current
-    if (!viewport || !sample || !page) return
+    const viewport = readingViewport.current;
+    const sample = measurementText.current;
+    const page = measurementPage.current;
+    if (!viewport || !sample || !page) return;
 
     const measurePages = () => {
       if (viewport.clientWidth === 0 || viewport.clientHeight === 0) {
-        return
+        return;
       }
 
-      const pageStyle = window.getComputedStyle(page)
-      const textStyle = window.getComputedStyle(sample)
+      const pageStyle = window.getComputedStyle(page);
+      const textStyle = window.getComputedStyle(sample);
       setFlipSize((currentSize) =>
-        currentSize.width === viewport.clientWidth && currentSize.height === viewport.clientHeight
+        currentSize.width === viewport.clientWidth &&
+        currentSize.height === viewport.clientHeight
           ? currentSize
-          : { width: viewport.clientWidth, height: viewport.clientHeight },
-      )
+          : { width: viewport.clientWidth, height: viewport.clientHeight }
+      );
       const pageWidth =
         viewport.clientWidth -
         Number.parseFloat(pageStyle.paddingLeft) -
-        Number.parseFloat(pageStyle.paddingRight)
-      const lineHeight = Number.parseFloat(textStyle.lineHeight)
-      const paragraphGap = Number.parseFloat(textStyle.marginBottom)
+        Number.parseFloat(pageStyle.paddingRight);
+      const lineHeight = Number.parseFloat(textStyle.lineHeight);
+      const paragraphGap = Number.parseFloat(textStyle.marginBottom);
       const verticalPadding =
-        Number.parseFloat(pageStyle.paddingTop) + Number.parseFloat(pageStyle.paddingBottom)
-      const headingHeight = headingRef.current?.getBoundingClientRect().height ?? 0
-      if (pageWidth <= 0 || lineHeight <= 0) return
+        Number.parseFloat(pageStyle.paddingTop) +
+        Number.parseFloat(pageStyle.paddingBottom);
+      const headingHeight =
+        headingRef.current?.getBoundingClientRect().height ?? 0;
+      if (pageWidth <= 0 || lineHeight <= 0) return;
 
       const signature = [
         chapterIndex,
@@ -247,17 +279,17 @@ export default function ReaderScreen({
         viewport.clientHeight,
         textStyle.font,
         chapterParagraphs.length,
-      ].join(':')
-      if (signature === layoutSignature.current) return
-      layoutSignature.current = signature
+      ].join(':');
+      if (signature === layoutSignature.current) return;
+      layoutSignature.current = signature;
 
-      const canvas = document.createElement('canvas')
-      const context = canvas.getContext('2d')
+      const canvas = document.createElement('canvas');
+      const context = canvas.getContext('2d');
       if (!context) {
-        console.error('Could not measure reader text for pagination.')
-        return
+        console.error('Could not measure reader text for pagination.');
+        return;
       }
-      context.font = `${textStyle.fontStyle} ${textStyle.fontWeight} ${textStyle.fontSize} ${textStyle.fontFamily}`
+      context.font = `${textStyle.fontStyle} ${textStyle.fontWeight} ${textStyle.fontSize} ${textStyle.fontFamily}`;
       const nextPages = paginateParagraphs(
         chapterParagraphs,
         (text) => context.measureText(text).width,
@@ -265,66 +297,77 @@ export default function ReaderScreen({
         lineHeight,
         paragraphGap,
         viewport.clientHeight - verticalPadding - headingHeight,
-        viewport.clientHeight - verticalPadding,
-      )
-      setPaginatedChapter({ index: chapterIndex, pages: nextPages })
-      onPageCountChangeRef.current(nextPages.length)
+        viewport.clientHeight - verticalPadding
+      );
+      setPaginatedChapter({ index: chapterIndex, pages: nextPages });
+      onPageCountChangeRef.current(nextPages.length);
       if (readerPageRef.current >= nextPages.length) {
-        onChangePageRef.current(nextPages.length - 1)
+        onChangePageRef.current(nextPages.length - 1);
       }
-    }
+    };
 
-    const observer = new ResizeObserver(measurePages)
-    observer.observe(viewport)
-    if (headingRef.current) observer.observe(headingRef.current)
-    const timer = window.setTimeout(measurePages, 0)
+    const observer = new ResizeObserver(measurePages);
+    observer.observe(viewport);
+    if (headingRef.current) observer.observe(headingRef.current);
+    const timer = window.setTimeout(measurePages, 0);
 
     return () => {
-      observer.disconnect()
-      window.clearTimeout(timer)
-    }
-  }, [chapterIndex, chapterParagraphs])
+      observer.disconnect();
+      window.clearTimeout(timer);
+    };
+  }, [chapterIndex, chapterParagraphs]);
 
   useEffect(() => {
-    const flipBook = flipBookRef.current?.pageFlip()
-    if (flipBook && readerPage < pages.length && flipBook.getCurrentPageIndex() !== readerPage) {
-      flipBook.turnToPage(readerPage)
+    const flipBook = flipBookRef.current?.pageFlip();
+    if (
+      flipBook &&
+      readerPage < pages.length &&
+      flipBook.getCurrentPageIndex() !== readerPage
+    ) {
+      flipBook.turnToPage(readerPage);
     }
-  }, [readerPage, pages.length, flipSize])
+  }, [readerPage, pages.length, flipSize]);
 
   const previousPage = () => {
     if (readerPage > 0) {
-      const flipBook = flipBookRef.current?.pageFlip()
-      if (flipBook) flipBook.flipPrev()
-      else onChangePage(readerPage - 1)
+      const flipBook = flipBookRef.current?.pageFlip();
+      if (flipBook) flipBook.flipPrev();
+      else onChangePage(readerPage - 1);
     } else if (chapterIndex > 0) {
-      const previousChapter = chapterIndex - 1
-      const previousChapterPageCount = chapterPageCounts[previousChapter] ?? 1
-      changeChapter(previousChapter, previousChapterPageCount - 1)
+      const previousChapter = chapterIndex - 1;
+      const previousChapterPageCount = chapterPageCounts[previousChapter] ?? 1;
+      changeChapter(previousChapter, previousChapterPageCount - 1);
     }
-  }
+  };
 
   const nextPage = () => {
     if (readerPage < pages.length - 1) {
-      const flipBook = flipBookRef.current?.pageFlip()
-      if (flipBook) flipBook.flipNext()
-      else onChangePage(readerPage + 1)
+      const flipBook = flipBookRef.current?.pageFlip();
+      if (flipBook) flipBook.flipNext();
+      else onChangePage(readerPage + 1);
     } else {
-      changeChapter((chapterIndex + 1) % chapterTitles.length)
+      changeChapter((chapterIndex + 1) % chapterTitles.length);
     }
-  }
+  };
 
   return (
     <main className="reader-page">
       <header className="reader-header">
-        <button className="icon-button" onClick={onBack} aria-label="Back to library">
+        <button
+          className="icon-button"
+          onClick={onBack}
+          aria-label="Back to library"
+        >
           <Icon name="chevron-left" />
         </button>
         <div className="reader-book-info">
           <strong title={book.title}>{truncateText(book.title, 36)}</strong>
           <span>{book.author}</span>
         </div>
-        <button className="contents-button" onClick={() => setShowContents(true)}>
+        <button
+          className="contents-button"
+          onClick={() => setShowContents(true)}
+        >
           <Icon name="book" size={16} />
           <span>Contents</span>
         </button>
@@ -363,12 +406,15 @@ export default function ReaderScreen({
                   chapterIndexRef.current === chapterIndex &&
                   flipBookRevisionRef.current === flipBookRevision
                 ) {
-                  onChangePageRef.current(event.data)
+                  onChangePageRef.current(event.data);
                 }
               }}
             >
               {pages.map((page, pageIndex) => (
-                <article className="reading-page" key={`${chapterIndex}-${pageIndex}`}>
+                <article
+                  className="reading-page"
+                  key={`${chapterIndex}-${pageIndex}`}
+                >
                   {pageIndex === 0 && (
                     <div className="chapter-heading">
                       <h1>{chapterTitles[chapterIndex]}</h1>
@@ -407,11 +453,16 @@ export default function ReaderScreen({
                 <span>✦</span>
               </div>
             </div>
-            <p className="reader-measure-text reading-text" ref={measurementText}>
+            <p
+              className="reader-measure-text reading-text"
+              ref={measurementText}
+            >
               Measure text
             </p>
           </article>
-          <span className="page-number">{String(readerPage + 1).padStart(2, '0')}</span>
+          <span className="page-number">
+            {String(readerPage + 1).padStart(2, '0')}
+          </span>
         </div>
       </section>
       <ReaderBottom
@@ -453,11 +504,15 @@ export default function ReaderScreen({
             <div className="contents-list">
               {chapterTitles.map((chapter, index) => (
                 <button
-                  className={index === chapterIndex ? 'contents-row is-current' : 'contents-row'}
+                  className={
+                    index === chapterIndex
+                      ? 'contents-row is-current'
+                      : 'contents-row'
+                  }
                   key={`${index}-${chapter}`}
                   onClick={() => {
-                    changeChapter(index)
-                    setShowContents(false)
+                    changeChapter(index);
+                    setShowContents(false);
                   }}
                 >
                   <span>{chapter}</span>
@@ -469,5 +524,5 @@ export default function ReaderScreen({
         </div>
       )}
     </main>
-  )
+  );
 }

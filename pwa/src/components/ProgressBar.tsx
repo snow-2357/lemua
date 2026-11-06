@@ -16,5 +16,5 @@ export default function ProgressBar({ value }: { value: number }) {
         <span style={{ width: `${value}%` }} />
       </div>
     </div>
-  )
+  );
 }

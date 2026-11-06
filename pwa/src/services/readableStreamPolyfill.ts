@@ -2,23 +2,23 @@
 const streamPrototype = ReadableStream.prototype as unknown as Record<
   symbol,
   unknown
->
+>;
 
 if (typeof streamPrototype[Symbol.asyncIterator] !== 'function') {
   streamPrototype[Symbol.asyncIterator] = async function* (
-    this: ReadableStream<unknown>,
+    this: ReadableStream<unknown>
   ) {
-    const reader = this.getReader()
+    const reader = this.getReader();
     try {
       while (true) {
-        const { done, value } = await reader.read()
-        if (done) return
-        yield value
+        const { done, value } = await reader.read();
+        if (done) return;
+        yield value;
       }
     } finally {
-      reader.releaseLock()
+      reader.releaseLock();
     }
-  }
+  };
 }
 
-export {}
+export {};

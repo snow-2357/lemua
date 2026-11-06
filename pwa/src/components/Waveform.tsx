@@ -1,7 +1,7 @@
-import { waveform } from '../data'
+import { waveform } from '../data';
 
 export default function Waveform({ progress = 0 }: { progress?: number }) {
-  const activeBars = Math.floor(waveform.length * progress)
+  const activeBars = Math.floor(waveform.length * progress);
   return (
     <div className="waveform" aria-label="Audio waveform">
       {waveform.map((height, index) => (
@@ -12,5 +12,5 @@ export default function Waveform({ progress = 0 }: { progress?: number }) {
         />
       ))}
     </div>
-  )
+  );
 }

@@ -16,7 +16,9 @@
   min-height: 100svh;
   color: var(--ink);
   background: var(--page);
-  transition: background-color 180ms ease, color 180ms ease;
+  transition:
+    background-color 180ms ease,
+    color 180ms ease;
 }
 
 .app-shell.theme-dark {

@@ -1,24 +1,35 @@
-import { unzipSync } from 'fflate'
 import * as ort from 'onnxruntime-web/wasm'
 import { phonemize } from 'phonemizer'
 
-const bundleBaseUrl =
-  'https://huggingface.co/snow2357/koroko_int8/resolve/main/mobile_bundle'
-const modelUrl = `${bundleBaseUrl}/kokoro_mobile_int8.onnx`
-const voicesUrl = `${bundleBaseUrl}/voices_mobile.bin`
-const metadataUrl = `${bundleBaseUrl}/kokoro_metadata.json`
-const sampleRate = 24000
-const maxTokensPerRun = 508
-const warmVoice = 'tone_warm'
+// One ONNX file: phoneme tokens in, 22050 Hz audio out (student + vocoder).
+// Upload tts_student_vocoder.onnx (or the _int8 file) to this repo first.
+const modelUrl =
+  'https://huggingface.co/snow2357/koroko_int8/resolve/main/lumua.onnx'
+const sampleRate = 22050
+const vocabSize = 10000
+const bosToken = 1
+const eosToken = 2
+// The student was trained on utterances up to about 18 seconds (roughly 250
+// phoneme characters), so longer text is split before it reaches the model.
+const maxTokensPerRun = 220
+const sentencePauseMs = 200
+const clausePauseMs = 80
 const language = 'en-us'
 const assetDatabaseName = 'lemua-kokoro-assets'
 const assetStoreName = 'assets'
-const narrationDatabaseName = 'lemua-kokoro-narration-v3'
+// Bumped from v3 so narration cached with the old Kokoro voice is never replayed.
+const narrationDatabaseName = 'lemua-kokoro-narration-v4'
 const audioStoreName = 'audio-chunks'
 
-type Metadata = {
-  tokenizer_vocab: Record<string, number>
-}
+// What the previous Kokoro version stored on the device (see clearOldKokoroCache).
+const oldBundleBaseUrl =
+  'https://huggingface.co/snow2357/koroko_int8/resolve/main/mobile_bundle'
+const oldAssetUrls = [
+  `${oldBundleBaseUrl}/kokoro_mobile_int8.onnx`,
+  `${oldBundleBaseUrl}/voices_mobile.bin`,
+  `${oldBundleBaseUrl}/kokoro_metadata.json`,
+]
+const oldNarrationDatabaseName = 'lemua-kokoro-narration-v3'
 
 type CachedAsset = {
   key: string
@@ -30,13 +41,11 @@ type CachedAudioChunk = {
   audio: Blob
 }
 
-type KokoroRuntime = {
+type TtsRuntime = {
   session: ort.InferenceSession
-  vocab: Map<string, number>
-  voiceArchive: Record<string, Uint8Array>
 }
 
-let runtimePromise: Promise<KokoroRuntime> | undefined
+let runtimePromise: Promise<TtsRuntime> | undefined
 let assetDatabasePromise: Promise<IDBDatabase> | undefined
 let narrationDatabasePromise: Promise<IDBDatabase> | undefined
 
@@ -116,14 +125,14 @@ async function readCachedAsset(key: string): Promise<ArrayBuffer | undefined> {
       if (record && record.buffer instanceof ArrayBuffer) result = record.buffer
     }
     request.onerror = () => {
-      reject(request.error ?? new Error('Could not read saved Kokoro files.'))
+      reject(request.error ?? new Error('Could not read saved speech files.'))
     }
     transaction.oncomplete = () => resolve(result)
     transaction.onerror = () => {
-      reject(transaction.error ?? new Error('Could not read saved Kokoro files.'))
+      reject(transaction.error ?? new Error('Could not read saved speech files.'))
     }
     transaction.onabort = () => {
-      reject(transaction.error ?? new Error('Reading saved Kokoro files was aborted.'))
+      reject(transaction.error ?? new Error('Reading saved speech files was aborted.'))
     }
   })
 }
@@ -135,10 +144,10 @@ async function saveCachedAsset(key: string, buffer: ArrayBuffer): Promise<void> 
     transaction.objectStore(assetStoreName).put({ key, buffer } satisfies CachedAsset)
     transaction.oncomplete = () => resolve()
     transaction.onerror = () => {
-      reject(transaction.error ?? new Error('Could not save Kokoro files on this device.'))
+      reject(transaction.error ?? new Error('Could not save speech files on this device.'))
     }
     transaction.onabort = () => {
-      reject(transaction.error ?? new Error('Saving Kokoro files was aborted.'))
+      reject(transaction.error ?? new Error('Saving speech files was aborted.'))
     }
   }).catch((error: unknown) => {
     if (
@@ -146,7 +155,7 @@ async function saveCachedAsset(key: string, buffer: ArrayBuffer): Promise<void> 
       (error.name === 'QuotaExceededError' || error.name === 'UnknownError')
     ) {
       throw new Error(
-        'There is not enough browser storage to save the Kokoro files. Free device storage and try again.',
+        'There is not enough browser storage to save the speech model. Free device storage and try again.',
         { cause: error },
       )
     }
@@ -167,7 +176,7 @@ async function fetchBuffer(
 
   const response = await fetch(url)
   if (!response.ok) {
-    throw new Error(`Could not download the Kokoro ${label} (HTTP ${response.status}).`)
+    throw new Error(`Could not download the ${label} (HTTP ${response.status}).`)
   }
   if (!response.body) {
     onProgress(`Downloading ${label}…`)
@@ -189,7 +198,7 @@ async function fetchBuffer(
     if (done) break
     if (bytes) {
       if (downloaded + value.length > bytes.length) {
-        throw new Error(`The downloaded Kokoro ${label} is larger than expected.`)
+        throw new Error(`The downloaded ${label} is larger than expected.`)
       }
       bytes.set(value, downloaded)
     } else {
@@ -205,7 +214,7 @@ async function fetchBuffer(
 
   if (bytes) {
     if (downloaded !== bytes.length) {
-      throw new Error(`The downloaded Kokoro ${label} is incomplete.`)
+      throw new Error(`The downloaded ${label} is incomplete.`)
     }
     await saveCachedAsset(url, bytes.buffer)
     onProgress(`Saved ${label} on this device`)
@@ -226,11 +235,32 @@ async function fetchBuffer(
 export async function preloadKokoroAssets(
   onProgress: (message: string) => void,
 ): Promise<void> {
-  await Promise.all([
-    fetchBuffer(metadataUrl, 'settings', onProgress),
-    fetchBuffer(voicesUrl, 'voice pack', onProgress),
-    fetchBuffer(modelUrl, 'INT8 model', onProgress),
-  ])
+  await fetchBuffer(modelUrl, 'speech model', onProgress)
+}
+
+// Optional: call once (for example from a settings screen) to free the space used
+// by the previous Kokoro model, voice pack and narration audio. Nothing calls it
+// automatically.
+export async function clearOldKokoroCache(): Promise<void> {
+  const database = await openAssetDatabase()
+  await new Promise<void>((resolve, reject) => {
+    const transaction = database.transaction(assetStoreName, 'readwrite')
+    const store = transaction.objectStore(assetStoreName)
+    for (const url of oldAssetUrls) store.delete(url)
+    transaction.oncomplete = () => resolve()
+    transaction.onerror = () => {
+      reject(transaction.error ?? new Error('Could not clear the old speech files.'))
+    }
+    transaction.onabort = () => {
+      reject(transaction.error ?? new Error('Clearing the old speech files was aborted.'))
+    }
+  })
+  await new Promise<void>((resolve) => {
+    const request = indexedDB.deleteDatabase(oldNarrationDatabaseName)
+    request.onsuccess = () => resolve()
+    request.onerror = () => resolve()
+    request.onblocked = () => resolve()
+  })
 }
 
 function readAudioChunk(key: string): Promise<Blob | undefined> {
@@ -296,82 +326,15 @@ export async function getOrGenerateNarrationChunk(
   return audio
 }
 
-function getNpyDataOffset(bytes: Uint8Array): { offset: number; shape: number[] } {
-  if (
-    bytes.length < 10 ||
-    bytes[0] !== 0x93 ||
-    String.fromCharCode(...bytes.subarray(1, 6)) !== 'NUMPY'
-  ) {
-    throw new Error('The Kokoro voice archive contains an invalid NumPy file.')
-  }
-
-  const majorVersion = bytes[6]
-  const headerLengthBytes = majorVersion === 1 ? 2 : 4
-  const headerOffset = 8 + headerLengthBytes
-  const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength)
-  const headerLength =
-    majorVersion === 1
-      ? view.getUint16(8, true)
-      : view.getUint32(8, true)
-  const header = new TextDecoder().decode(
-    bytes.subarray(headerOffset, headerOffset + headerLength),
-  )
-  const descriptor = /['"]descr['"]\s*:\s*['"]([^'"]+)['"]/.exec(header)?.[1]
-  const shapeText = /['"]shape['"]\s*:\s*\(([^)]*)\)/.exec(header)?.[1]
-  if ((descriptor !== '<f4' && descriptor !== '|f4') || !shapeText) {
-    throw new Error('The Kokoro voice embedding has an unsupported format.')
-  }
-
-  const shape = shapeText
-    .split(',')
-    .map((dimension) => Number(dimension.trim()))
-    .filter((dimension) => Number.isInteger(dimension) && dimension > 0)
-  if (shape.length !== 3 || shape[1] !== 1 || shape[2] !== 256) {
-    throw new Error('The Kokoro voice embedding has an unexpected shape.')
-  }
-  return { offset: headerOffset + headerLength, shape }
-}
-
-function createVoiceStyle(voiceData: Uint8Array, tokenCount: number): Float32Array {
-  const { offset, shape } = getNpyDataOffset(voiceData)
-  if (tokenCount >= shape[0]) {
-    throw new Error('This page contains too much text to synthesize at once.')
-  }
-
-  const dataOffset = offset + tokenCount * 256 * Float32Array.BYTES_PER_ELEMENT
-  const view = new DataView(
-    voiceData.buffer,
-    voiceData.byteOffset + dataOffset,
-    256 * Float32Array.BYTES_PER_ELEMENT,
-  )
-  return Float32Array.from(
-    { length: 256 },
-    (_, index) => view.getFloat32(index * Float32Array.BYTES_PER_ELEMENT, true),
-  )
-}
-
 async function loadRuntime(
   onProgress: (message: string) => void,
-): Promise<KokoroRuntime> {
+): Promise<TtsRuntime> {
   if (!runtimePromise) {
     runtimePromise = (async () => {
-      onProgress('Loading Kokoro settings…')
-      const [metadataBuffer, voiceBuffer, modelBuffer] = await Promise.all([
-        fetchBuffer(metadataUrl, 'settings', onProgress),
-        fetchBuffer(voicesUrl, 'voice pack', onProgress),
-        fetchBuffer(modelUrl, 'INT8 model', onProgress),
-      ])
-      const metadata = JSON.parse(new TextDecoder().decode(metadataBuffer)) as Metadata
-      if (!metadata.tokenizer_vocab) {
-        throw new Error('The Kokoro settings do not include a phoneme vocabulary.')
-      }
+      onProgress('Loading the speech model…')
+      const modelBuffer = await fetchBuffer(modelUrl, 'speech model', onProgress)
 
-      const voiceArchive = unzipSync(new Uint8Array(voiceBuffer))
-      if (!voiceArchive[`${warmVoice}.npy`]) {
-        throw new Error(`The Kokoro voice pack does not include ${warmVoice}.`)
-      }
-
-      onProgress('Preparing the Kokoro model on this device…')
+      onProgress('Preparing the speech model on this device…')
       ort.env.wasm.numThreads = globalThis.crossOriginIsolated
         ? Math.max(1, Math.min(3, (navigator.hardwareConcurrency || 2) - 1))
         : 1
@@ -379,17 +342,16 @@ async function loadRuntime(
         executionProviders: ['wasm'],
       })
 
-      const requiredInputs = ['tokens', 'style', 'speed']
-      if (requiredInputs.some((name) => !session.inputNames.includes(name))) {
+      const requiredInputs = ['tokens', 'speed']
+      if (
+        requiredInputs.some((name) => !session.inputNames.includes(name)) ||
+        !session.outputNames.includes('waveform')
+      ) {
         await session.release()
-        throw new Error('The downloaded Kokoro model has an unsupported input format.')
+        throw new Error('The downloaded speech model has an unsupported input format.')
       }
 
-      return {
-        session,
-        vocab: new Map(Object.entries(metadata.tokenizer_vocab)),
-        voiceArchive,
-      }
+      return { session }
     })().catch((error: unknown) => {
       runtimePromise = undefined
       throw error
@@ -398,19 +360,71 @@ async function loadRuntime(
   return runtimePromise
 }
 
-function splitTokens(tokens: number[]): number[][] {
-  const chunks: number[][] = []
-  let current: number[] = []
-  for (const token of tokens) {
-    current.push(token)
-    if (current.length === maxTokensPerRun) {
-      chunks.push(current)
-      current = []
-    }
-  }
-  if (current.length > 0) chunks.push(current)
-  return chunks
+// ---------------------------------------------------------------- text frontend
+// This must match frontend.py exactly: raw eSpeak en-us IPA with stress marks,
+// punctuation kept, single spaces between words. Do not add text normalization or
+// character replacements; the student was never trained on them.
+
+// The same punctuation marks Python's phonemizer keeps (preserve_punctuation=True).
+const punctuationPattern = /((?:\s*[;:,.!?¡¿—…"«»“”]+\s*)+)/
+
+async function textToPhonemes(text: string): Promise<string> {
+  const sections = text.trim().split(punctuationPattern) // odd indexes are punctuation
+  const parts = await Promise.all(
+    sections.map(async (section, index) => {
+      if (index % 2 === 1) return section
+      if (!section.trim()) return ''
+      return (await phonemize(section, language)).join(' ')
+    }),
+  )
+  return parts.join('').trim().split(/\s+/).join(' ')
 }
+
+function splitSentences(text: string): string[] {
+  const clean = text.replace(/\s+/g, ' ').trim()
+  if (!clean) return []
+  if (typeof Intl !== 'undefined' && 'Segmenter' in Intl) {
+    const segmenter = new Intl.Segmenter(language, { granularity: 'sentence' })
+    return Array.from(segmenter.segment(clean), (part) => part.segment.trim()).filter(
+      Boolean,
+    )
+  }
+  const matches = clean.match(/[^.!?…]+(?:[.!?…]+["”')\]]*|$)/g)
+  return matches ? matches.map((sentence) => sentence.trim()).filter(Boolean) : [clean]
+}
+
+// Cuts an over-long phoneme string at a comma, then a space, near the limit.
+function splitPhonemes(phonemes: string, limit: number): string[] {
+  const pieces: string[] = []
+  let rest = phonemes
+  while (rest.length > limit) {
+    const window = rest.slice(0, limit)
+    let cut = Math.max(
+      window.lastIndexOf(', '),
+      window.lastIndexOf('; '),
+      window.lastIndexOf(': '),
+    )
+    if (cut < limit / 2) cut = window.lastIndexOf(' ')
+    if (cut < limit / 3) cut = limit - 1
+    pieces.push(rest.slice(0, cut + 1).trim())
+    rest = rest.slice(cut + 1).trim()
+  }
+  if (rest) pieces.push(rest)
+  return pieces.filter(Boolean)
+}
+
+// [start] + one id per phoneme character (its code point) + [end].
+function toTokenIds(phonemes: string): BigInt64Array {
+  const ids: number[] = [bosToken]
+  for (const character of phonemes) {
+    const id = character.codePointAt(0)!
+    if (id > eosToken && id < vocabSize) ids.push(id)
+  }
+  ids.push(eosToken)
+  return BigInt64Array.from(ids, (id) => BigInt(id))
+}
+
+// ---------------------------------------------------------------- audio
 
 function encodeWav(samples: Float32Array): Blob {
   const wav = new ArrayBuffer(44 + samples.length * 2)
@@ -446,6 +460,10 @@ function encodeWav(samples: Float32Array): Blob {
   return new Blob([wav], { type: 'audio/wav' })
 }
 
+function createSilence(durationMs: number): Float32Array {
+  return new Float32Array(Math.floor((sampleRate * durationMs) / 1000))
+}
+
 export async function generateKokoroAudio(
   text: string,
   speed: number,
@@ -455,66 +473,53 @@ export async function generateKokoroAudio(
   const runtime = await loadRuntime(onProgress)
   signal?.throwIfAborted()
   onProgress('Preparing the page text…')
-  const phonemeLines = await phonemize(text, language)
-  signal?.throwIfAborted()
-  const phonemes = phonemeLines.join(' ').trim()
-  const tokens = Array.from(phonemes)
-    .map((phoneme) => runtime.vocab.get(phoneme))
-    .filter((token): token is number => token !== undefined)
-  if (tokens.length === 0) {
-    throw new Error('No supported speech sounds were found on this page.')
-  }
 
-  const voiceData = runtime.voiceArchive[`${warmVoice}.npy`]
+  const sentences = splitSentences(text)
   const audioChunks: Float32Array[] = []
+  let generated = false
 
-  for (let i = 0; i < phonemeLines.length; i++) {
-    const line = phonemeLines[i].trim()
-    if (!line) continue
+  for (const [sentenceIndex, sentence] of sentences.entries()) {
+    signal?.throwIfAborted()
+    const phonemes = await textToPhonemes(sentence)
+    signal?.throwIfAborted()
+    const pieces = splitPhonemes(phonemes, maxTokensPerRun)
 
-    const tokens = Array.from(line)
-      .map((phoneme) => runtime.vocab.get(phoneme))
-      .filter((token): token is number => token !== undefined)
+    for (const [pieceIndex, piece] of pieces.entries()) {
+      const tokens = toTokenIds(piece)
+      if (tokens.length <= 2) continue // nothing speakable in this piece
 
-    if (tokens.length === 0) continue
+      await new Promise((resolve) => setTimeout(resolve, 0))
+      signal?.throwIfAborted()
+      onProgress('Generating speech on this device…')
 
-    for (const tokenChunk of splitTokens(tokens)) {
-      for (const tokenChunk of splitTokens(tokens)) {
-        await new Promise((resolve) => setTimeout(resolve, 0))
-        signal?.throwIfAborted()
-        onProgress('Generating speech with Kokoro on this device…')
-        const paddedTokens = BigInt64Array.from([
-          0n,
-          ...tokenChunk.map((token) => BigInt(token)),
-          0n,
-        ])
-        const inputs: Record<string, ort.Tensor> = {
-          tokens: new ort.Tensor('int64', paddedTokens, [1, paddedTokens.length]),
-          style: new ort.Tensor('float32', createVoiceStyle(voiceData, tokenChunk.length), [
-            1,
-            256,
-          ]),
-          speed: new ort.Tensor('float32', Float32Array.of(speed), [1]),
+      const inputs: Record<string, ort.Tensor> = {
+        tokens: new ort.Tensor('int64', tokens, [1, tokens.length]),
+        speed: new ort.Tensor('float32', Float32Array.of(speed), [1]),
+      }
+      let result: Awaited<ReturnType<typeof runtime.session.run>> | undefined
+      try {
+        result = await runtime.session.run(inputs)
+        const audio = result.waveform?.data
+        if (!(audio instanceof Float32Array)) {
+          throw new Error('The speech model returned audio in an unsupported format.')
         }
-        let result: Awaited<ReturnType<typeof runtime.session.run>> | undefined
-        try {
-          result = await runtime.session.run(inputs)
-          const audio = result.audio?.data
-          if (!(audio instanceof Float32Array)) {
-            throw new Error('Kokoro returned audio in an unsupported format.')
-          }
-          audioChunks.push(audio.slice())
-        } finally {
-          Object.values(result ?? {}).forEach((tensor) => tensor.dispose())
-          Object.values(inputs).forEach((tensor) => tensor.dispose())
-        }
+        audioChunks.push(audio.slice())
+        generated = true
+      } finally {
+        Object.values(result ?? {}).forEach((tensor) => tensor.dispose())
+        Object.values(inputs).forEach((tensor) => tensor.dispose())
       }
 
+      if (pieceIndex < pieces.length - 1) audioChunks.push(createSilence(clausePauseMs))
     }
 
-    if (i < phonemeLines.length - 1) {
-      audioChunks.push(createSilence(150))
+    if (sentenceIndex < sentences.length - 1) {
+      audioChunks.push(createSilence(sentencePauseMs))
     }
+  }
+
+  if (!generated) {
+    throw new Error('No supported speech sounds were found on this page.')
   }
 
   const totalSamples = audioChunks.reduce((total, chunk) => total + chunk.length, 0)
@@ -525,10 +530,4 @@ export async function generateKokoroAudio(
     offset += chunk.length
   }
   return encodeWav(samples)
-}
-
-function createSilence(durationMs: number, sampleRate = 24000) {
-  return new Float32Array(
-    Math.floor((sampleRate * durationMs) / 1000),
-  )
 }
